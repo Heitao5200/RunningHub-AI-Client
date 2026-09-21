@@ -4,9 +4,7 @@ import { saveMultipleFiles, getDirectoryName } from '../services/autoSaveService
 import { connectTaskProgress, TaskProgressSnapshot } from '../services/taskProgress';
 import { isCapacityLimitedError, queryTaskResult, submitStandardModelTask, submitTask, uploadFile } from '../services/api';
 import { createApiCapacityManagers } from '../services/apiCapacity';
-import { ApiKeyConfig, DecodeConfig, FailedTaskInfo, InstanceType, NodeInfo, PendingFilesMap, PromptTips, StandardModelConfig, TaskOutput } from '../types';
-import { decodeDuckImage, isLikelyDuckCarrierImage } from '../utils/duckDecoder';
-import { shouldAutoDecodeOutputs } from '../utils/decodeConfig';
+import { ApiKeyConfig, FailedTaskInfo, InstanceType, NodeInfo, PendingFilesMap, PromptTips, StandardModelConfig, TaskOutput } from '../types';
 
 interface StepRunningProps {
   apiConfigs: ApiKeyConfig[];
@@ -16,7 +14,6 @@ interface StepRunningProps {
   batchList?: NodeInfo[][];
   pendingFiles?: PendingFilesMap;
   autoSaveEnabled: boolean;
-  decodeConfig: DecodeConfig;
   onComplete: (outputs: TaskOutput[], taskId: string) => void;
   onBack: () => void;
   onBatchComplete: (summaryLogs: string[], failedTasks: FailedTaskInfo[]) => void;
@@ -141,7 +138,6 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
   batchList,
   pendingFiles,
   autoSaveEnabled,
-  decodeConfig,
   batchTaskName,
   instanceType,
   onComplete,
@@ -183,55 +179,6 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
   const closeAllConnections = () => {
     activeConnectionsRef.current.forEach(connection => connection.close());
     activeConnectionsRef.current.clear();
-  };
-
-  const processOutputsWithDecode = async (
-    outputs: TaskOutput[],
-    logPrefix = '',
-  ): Promise<{ decodedOutputs: TaskOutput[]; decodedCount: number }> => {
-    if (!shouldAutoDecodeOutputs(decodeConfig)) {
-      return { decodedOutputs: outputs, decodedCount: 0 };
-    }
-
-    const decodedOutputs: TaskOutput[] = [];
-    let decodedCount = 0;
-
-    for (const output of outputs) {
-      const url = output.fileUrl;
-      if (!isLikelyDuckCarrierImage(url, output.fileType)) {
-        decodedOutputs.push(output);
-        continue;
-      }
-
-      try {
-        addLog(`${logPrefix}尝试解码 ${url.split('/').pop() || url}`);
-        const result = await decodeDuckImage(url, decodeConfig.password);
-        if (result.success && result.data) {
-          decodedOutputs.push({
-            fileUrl: URL.createObjectURL(result.data),
-            fileType: result.extension || output.fileType || 'png',
-          });
-          decodedCount += 1;
-          addLog(`${logPrefix}${url.split('/').pop() || url} 已解码为 ${result.extension || output.fileType || 'bin'}`);
-        } else {
-          if (result.error === 'PASSWORD_REQUIRED') {
-            addLog(`${logPrefix}${url.split('/').pop() || url} 需要解码密码，已跳过`);
-          } else if (result.error === 'WRONG_PASSWORD') {
-            addLog(`${logPrefix}${url.split('/').pop() || url} 解码密码错误，已跳过`);
-          } else if (result.error === 'NOT_DUCK_IMAGE') {
-            addLog(`${logPrefix}${url.split('/').pop() || url} 不是小黄鸭加密图，已跳过`);
-          } else {
-            addLog(`${logPrefix}${url.split('/').pop() || url} 解码失败: ${result.errorMessage || result.error || '未知错误'}`);
-          }
-          decodedOutputs.push(output);
-        }
-      } catch (error: any) {
-        addLog(`${logPrefix}解码失败: ${error.message || error}`);
-        decodedOutputs.push(output);
-      }
-    }
-
-    return { decodedOutputs, decodedCount };
   };
 
   const saveOutputs = async (
@@ -462,12 +409,7 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
           const result = await executeTask(manager.apiKey, nodes, '', nextStatus => active && setStatus(nextStatus));
           if (!active) return;
 
-          const { decodedOutputs, decodedCount } = await processOutputsWithDecode(result.outputs);
-          if (decodedCount > 0) {
-            addLog(`已解码 ${decodedCount} 个结果文件`);
-          }
-
-          await saveOutputs(decodedOutputs);
+          await saveOutputs(result.outputs);
           if (standardModelConfig) {
             activeStandardTasksRef.current = Math.max(0, activeStandardTasksRef.current - 1);
             setCurrentBatchIndex(prev => prev + 1);
@@ -475,7 +417,7 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
           } else {
             setStatus('SUCCESS');
           }
-          onComplete(decodedOutputs, result.taskId);
+          onComplete(result.outputs, result.taskId);
           return;
         } catch (error: any) {
           if (!active) return;
@@ -595,12 +537,7 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
                   taskUsageMapRef.current.set(taskIndex, result.usage);
                 }
 
-                const { decodedOutputs, decodedCount } = await processOutputsWithDecode(result.outputs, logPrefix);
-                if (decodedCount > 0) {
-                  addLog(`${logPrefix}已解码 ${decodedCount} 个结果文件`);
-                }
-
-                await saveOutputs(decodedOutputs, taskIndex, logPrefix);
+                await saveOutputs(result.outputs, taskIndex, logPrefix);
 
                 completedCount += 1;
                 setCurrentBatchIndex(completedCount + failedCountLocal);
@@ -676,14 +613,9 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
         const result = await executeTask(apiKey, nodes, '', nextStatus => active && setStatus(nextStatus));
         if (!active) return;
 
-        const { decodedOutputs, decodedCount } = await processOutputsWithDecode(result.outputs);
-        if (decodedCount > 0) {
-          addLog(`已解码 ${decodedCount} 个结果文件`);
-        }
-
-        await saveOutputs(decodedOutputs);
+        await saveOutputs(result.outputs);
         setStatus('SUCCESS');
-        onComplete(decodedOutputs, result.taskId);
+        onComplete(result.outputs, result.taskId);
       } catch (error: any) {
         if (!active) return;
         setStatus('FAILED');
@@ -754,12 +686,7 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
               taskUsageMapRef.current.set(taskIndex, result.usage);
             }
 
-            const { decodedOutputs, decodedCount } = await processOutputsWithDecode(result.outputs, logPrefix);
-            if (decodedCount > 0) {
-              addLog(`${logPrefix}已解码 ${decodedCount} 个结果文件`);
-            }
-
-            await saveOutputs(decodedOutputs, taskIndex, logPrefix);
+            await saveOutputs(result.outputs, taskIndex, logPrefix);
 
             completedCount += 1;
             setCurrentBatchIndex(completedCount + failedCountLocal);
@@ -876,14 +803,9 @@ const StepRunning = forwardRef<StepRunningRef, StepRunningProps>(({
           taskUsageMapRef.current.set(taskNumber - 1, result.usage);
         }
 
-        const { decodedOutputs, decodedCount } = await processOutputsWithDecode(result.outputs, logPrefix);
-        if (decodedCount > 0) {
-          addLog(`${logPrefix}已解码 ${decodedCount} 个结果文件`);
-        }
-
-        await saveOutputs(decodedOutputs, taskNumber - 1, logPrefix);
+        await saveOutputs(result.outputs, taskNumber - 1, logPrefix);
         addLog(`${logPrefix}已完成`);
-        onComplete(decodedOutputs, result.taskId);
+        onComplete(result.outputs, result.taskId);
         succeeded = true;
       } catch (error: any) {
         setFailedCount(prev => prev + 1);

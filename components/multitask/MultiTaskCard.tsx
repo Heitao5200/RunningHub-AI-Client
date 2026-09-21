@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import StepEditor, { StepEditorRef } from '../StepEditor';
-import { DecodeConfig, InstanceType, NodeInfo, PendingFilesMap, TaskOutput, WebAppInfo } from '../../types';
+import { InstanceType, NodeInfo, PendingFilesMap, TaskOutput, WebAppInfo, WorkflowRunOptions } from '../../types';
 
 export type MultiTaskCardStatus = 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled';
 
@@ -53,6 +53,7 @@ export interface MultiTaskCardData {
   loading: boolean;
   loadError: string | null;
   instanceType: InstanceType;
+  runOptions?: WorkflowRunOptions;
   initialBatchList?: NodeInfo[][];
   initialBatchTaskName?: string;
   run: MultiTaskCardRunState;
@@ -61,14 +62,14 @@ export interface MultiTaskCardData {
 interface MultiTaskCardProps {
   card: MultiTaskCardData;
   apiKeys: string[];
-  decodeConfig: DecodeConfig;
   editorRef: React.Ref<StepEditorRef>;
-  isLocked: boolean;
+  isBusy: boolean;
+  onRunOptionsChange: (cardId: string, options: WorkflowRunOptions) => void;
   onWebappIdChange: (cardId: string, value: string) => void;
   onLoad: (cardId: string) => void;
   onRemove: (cardId: string) => void;
   onDuplicate: (cardId: string) => void;
-  onRun: (cardId: string, updatedNodes: NodeInfo[], batchList?: NodeInfo[][], pendingFiles?: PendingFilesMap, decodeConfig?: DecodeConfig, batchTaskName?: string, instanceType?: InstanceType) => void;
+  onRun: (cardId: string, updatedNodes: NodeInfo[], batchList?: NodeInfo[][], pendingFiles?: PendingFilesMap, batchTaskName?: string, instanceType?: InstanceType) => void;
   onCancel: (cardId: string) => void;
   onInstanceTypeChange: (cardId: string, nextType: InstanceType) => void;
 }
@@ -183,9 +184,9 @@ const renderOutputThumb = (output: TaskOutput) => {
 const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
   card,
   apiKeys,
-  decodeConfig,
   editorRef,
-  isLocked,
+  isBusy,
+  onRunOptionsChange,
   onWebappIdChange,
   onLoad,
   onRemove,
@@ -202,7 +203,7 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
     setInputValue(card.webappId);
   }, [card.webappId]);
 
-  const isRunning = card.run.status === 'queued' || card.run.status === 'running';
+  const isRunning = isBusy;
   const statusMeta = statusMap[card.run.status];
   const batchPercent = card.run.totalUnits > 0 ? Math.round(((card.run.completedUnits + card.run.failedUnits) / card.run.totalUnits) * 100) : 0;
   const displayOutputs = useMemo(() => card.run.outputs.slice(-4), [card.run.outputs]);
@@ -277,6 +278,7 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
             </button>
             <button
               onClick={() => onRemove(card.id)}
+              disabled={isBusy}
               className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-slate-400 dark:hover:bg-red-900/20"
               title="删除卡片"
             >
@@ -289,6 +291,7 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
           <input
             type="text"
             value={inputValue}
+            disabled={isBusy || card.loading}
             onChange={event => {
               const value = event.target.value;
               setInputValue(value);
@@ -304,13 +307,45 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
           />
           <button
             onClick={() => onLoad(card.id)}
-            disabled={card.loading}
+            disabled={card.loading || isBusy}
             className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {card.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {'\u52a0\u8f7d'}
           </button>
         </div>
+
+        <details className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          <summary className="cursor-pointer">应用运行选项</summary>
+          <div className="mt-2 grid gap-2">
+            <label className="grid gap-1">
+              <span>应用访问密码（可选）</span>
+              <input
+                type="password"
+                autoComplete="off"
+                disabled={isBusy}
+                value={card.runOptions?.accessPassword || ''}
+                onChange={event => onRunOptionsChange(card.id, { ...card.runOptions, accessPassword: event.target.value })}
+                placeholder="仅加密应用需要"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 dark:border-slate-700 dark:bg-[#0F1115] dark:text-slate-200"
+              />
+            </label>
+            <label className="grid gap-1">
+              <span>实例保留时长（秒，仅企业共享）</span>
+              <input
+                type="number"
+                min={10}
+                max={180}
+                step={1}
+                disabled={isBusy}
+                value={card.runOptions?.retainSeconds ?? ''}
+                onChange={event => onRunOptionsChange(card.id, { ...card.runOptions, retainSeconds: event.target.value === '' ? undefined : Number(event.target.value) })}
+                placeholder="10–180，留空使用默认值"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 dark:border-slate-700 dark:bg-[#0F1115] dark:text-slate-200"
+              />
+            </label>
+          </div>
+        </details>
 
         {card.loadError && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
@@ -321,12 +356,6 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
       </div>
 
       <div className="relative flex-1 min-h-0">
-        {isLocked && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 text-sm font-medium text-slate-600 backdrop-blur-sm dark:bg-black/40 dark:text-slate-200">
-            {'\u8c03\u5ea6\u8fdb\u884c\u4e2d\uff0c\u5f53\u524d\u5361\u7247\u6682\u65f6\u9501\u5b9a'}
-          </div>
-        )}
-
         <StepEditor
           ref={editorRef}
           nodes={card.nodes}
@@ -335,9 +364,8 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
           runType={isRunning ? card.run.mode : 'none'}
           webAppInfo={card.webAppInfo}
           onBack={() => {}}
-          onRun={(updatedNodes, batchList, pendingFiles, nextDecodeConfig, batchTaskName, nextInstanceType) => onRun(card.id, updatedNodes, batchList, pendingFiles, nextDecodeConfig, batchTaskName, nextInstanceType)}
+          onRun={(updatedNodes, batchList, pendingFiles, batchTaskName, nextInstanceType) => onRun(card.id, updatedNodes, batchList, pendingFiles, batchTaskName, nextInstanceType)}
           onCancel={() => onCancel(card.id)}
-          decodeConfig={decodeConfig}
           failedBatchIndices={card.run.failedBatchIndices}
           instanceType={card.instanceType}
           onInstanceTypeChange={nextType => onInstanceTypeChange(card.id, nextType)}

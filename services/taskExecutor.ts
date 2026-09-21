@@ -1,9 +1,7 @@
 import { saveMultipleFiles } from './autoSaveService';
 import { connectTaskProgress, TaskProgressSnapshot } from './taskProgress';
 import { queryTaskResult, submitTask, uploadFile } from './api';
-import { decodeDuckImage, isLikelyDuckCarrierImage } from '../utils/duckDecoder';
-import { DecodeConfig, InstanceType, NodeInfo, PendingFilesMap, PromptTips, TaskOutput } from '../types';
-import { shouldAutoDecodeOutputs } from '../utils/decodeConfig';
+import { InstanceType, NodeInfo, PendingFilesMap, PromptTips, TaskOutput, WorkflowRunOptions } from '../types';
 
 const DEFAULT_POLL_INTERVAL_MS = 3500;
 const REALTIME_POLL_INTERVAL_MS = 5000;
@@ -42,7 +40,8 @@ export interface ExecuteTaskRequest {
   pendingFiles?: PendingFilesMap;
   taskIndex?: number;
   instanceType?: InstanceType;
-  decodeConfig: DecodeConfig;
+  runOptions?: WorkflowRunOptions;
+
   autoSaveEnabled: boolean;
   batchTaskName?: string;
   taskLabel?: string;
@@ -54,7 +53,6 @@ export interface ExecuteTaskResult {
   outputs: TaskOutput[];
   taskId: string;
   usage?: TaskUsageStats;
-  decodedCount: number;
   savedCount: number;
 }
 
@@ -140,57 +138,6 @@ const ensureNotCancelled = (control?: ExecuteTaskControl) => {
   if (control?.isCancelled?.()) {
     throw new TaskCancelledError();
   }
-};
-
-const processOutputsWithDecode = async (
-  outputs: TaskOutput[],
-  decodeConfig: DecodeConfig,
-  onLog?: (message: string) => void,
-  logPrefix = '',
-): Promise<{ decodedOutputs: TaskOutput[]; decodedCount: number }> => {
-  if (!shouldAutoDecodeOutputs(decodeConfig)) {
-    return { decodedOutputs: outputs, decodedCount: 0 };
-  }
-
-  const decodedOutputs: TaskOutput[] = [];
-  let decodedCount = 0;
-
-  for (const output of outputs) {
-    const url = output.fileUrl;
-    if (!isLikelyDuckCarrierImage(url, output.fileType)) {
-      decodedOutputs.push(output);
-      continue;
-    }
-
-    try {
-      onLog?.(`${logPrefix}尝试解码 ${url.split('/').pop() || url}`);
-      const result = await decodeDuckImage(url, decodeConfig.password);
-      if (result.success && result.data) {
-        decodedOutputs.push({
-          fileUrl: URL.createObjectURL(result.data),
-          fileType: result.extension || output.fileType || 'png',
-        });
-        decodedCount += 1;
-        onLog?.(`${logPrefix}${url.split('/').pop() || url} 已解码为 ${result.extension || output.fileType || 'bin'}`);
-      } else {
-        if (result.error === 'PASSWORD_REQUIRED') {
-          onLog?.(`${logPrefix}${url.split('/').pop() || url} 需要解码密码，已跳过`);
-        } else if (result.error === 'WRONG_PASSWORD') {
-          onLog?.(`${logPrefix}${url.split('/').pop() || url} 解码密码错误，已跳过`);
-        } else if (result.error === 'NOT_DUCK_IMAGE') {
-          onLog?.(`${logPrefix}${url.split('/').pop() || url} 不是小黄鸭加密图，已跳过`);
-        } else if (result.error) {
-          onLog?.(`${logPrefix}${url.split('/').pop() || url} 解码失败: ${result.errorMessage || result.error}`);
-        }
-        decodedOutputs.push(output);
-      }
-    } catch (error: any) {
-      onLog?.(`${logPrefix}解码失败: ${error.message || error}`);
-      decodedOutputs.push(output);
-    }
-  }
-
-  return { decodedOutputs, decodedCount };
 };
 
 const saveOutputs = async (
@@ -279,7 +226,7 @@ export const executeWorkflowTask = async ({
   pendingFiles,
   taskIndex,
   instanceType,
-  decodeConfig,
+  runOptions,
   autoSaveEnabled,
   batchTaskName,
   taskLabel = '',
@@ -295,7 +242,7 @@ export const executeWorkflowTask = async ({
   callbacks?.onStatusChange?.('SUBMITTING');
   callbacks?.onLog?.(`${logPrefix}提交任务`);
 
-  const submitResult = await submitTask(apiKey, webappId, nodesToSubmit, instanceType);
+  const submitResult = await submitTask(apiKey, webappId, nodesToSubmit, instanceType, runOptions);
   const submitPromptTips = parsePromptTips(submitResult.promptTips);
   if (submitPromptTips?.node_errors && Object.keys(submitPromptTips.node_errors).length > 0) {
     const parsed = parseNodeErrors(submitPromptTips.node_errors);
@@ -333,14 +280,12 @@ export const executeWorkflowTask = async ({
           : undefined;
 
         callbacks?.onLog?.(`${logPrefix}任务完成`);
-        const { decodedOutputs, decodedCount } = await processOutputsWithDecode(result.results, decodeConfig, callbacks?.onLog, logPrefix);
-        const savedCount = await saveOutputs(decodedOutputs, autoSaveEnabled, taskIndex, batchTaskName, callbacks?.onLog, logPrefix);
+        const savedCount = await saveOutputs(result.results, autoSaveEnabled, taskIndex, batchTaskName, callbacks?.onLog, logPrefix);
 
         return {
-          outputs: decodedOutputs,
+          outputs: result.results,
           taskId: submitResult.taskId,
           usage,
-          decodedCount,
           savedCount,
         };
       }

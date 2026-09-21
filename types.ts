@@ -120,6 +120,11 @@ export interface ApiKeyConfig {
   concurrency: number;
 }
 
+export interface WorkflowRunOptions {
+  accessPassword?: string;
+  retainSeconds?: number;
+}
+
 export interface ApiKeyEntry {
   id: string;
   apiKey: string;
@@ -192,21 +197,6 @@ export interface WebAppInfo {
     collectCount: string;
     downloadCount: string;
   };
-}
-
-export interface DecodeConfig {
-  enabled: boolean;
-  password: string;
-  autoDecodeEnabled: boolean;
-  alwaysOn: boolean;
-}
-
-export interface DecodeResult {
-  success: boolean;
-  data?: Blob;
-  extension?: string;
-  error?: 'PASSWORD_REQUIRED' | 'WRONG_PASSWORD' | 'NOT_DUCK_IMAGE' | 'DECODE_FAILED';
-  errorMessage?: string;
 }
 
 export interface RecentApp {

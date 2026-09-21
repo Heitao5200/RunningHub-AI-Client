@@ -1,0 +1,58 @@
+[
+  {
+    "source": "https://www.runninghub.cn/ai-detail/2101878695983140866",
+    "node": {
+      "nodeId": "192",
+      "nodeName": "PrimitiveBoolean",
+      "fieldName": "value",
+      "fieldValue": "true",
+      "fieldData": "[\"BOOLEAN\", {}]",
+      "fieldType": "BOOLEAN",
+      "description": "value",
+      "descriptionCn": "value",
+      "descriptionEn": null
+    }
+  },
+  {
+    "source": "https://www.runninghub.cn/ai-detail/2101876745396908034",
+    "node": {
+      "nodeId": "136",
+      "nodeName": "MiniMaxH3ReferenceToVideo",
+      "fieldName": "ref_image_size",
+      "fieldValue": "match",
+      "fieldData": "[\"COMBO\", {\"default\": \"match\", \"options\": [\"match\", \"max\"], \"tooltip\": \"Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so 'max' can be several times slower.\", \"multiselect\": false}]",
+      "fieldType": "LIST",
+      "description": "ref_image_size",
+      "descriptionCn": "ref_image_size",
+      "descriptionEn": null
+    }
+  },
+  {
+    "source": "https://www.runninghub.cn/ai-detail/2099175252080287746",
+    "node": {
+      "nodeId": "247",
+      "nodeName": "LoadAudio",
+      "fieldName": "audio",
+      "fieldValue": "None",
+      "fieldData": "[\"COMBO\", {\"options\": [\"None\"], \"multiselect\": false, \"audio_upload\": true}]",
+      "fieldType": "AUDIO",
+      "description": "参考音频 1",
+      "descriptionCn": "参考音频 1",
+      "descriptionEn": null
+    }
+  },
+  {
+    "source": "https://www.runninghub.cn/ai-detail/2101871939232034818",
+    "node": {
+      "nodeId": "29",
+      "nodeName": "ResolutionSelector",
+      "fieldName": "aspect_ratio",
+      "fieldValue": "16:9 (Widescreen)",
+      "fieldData": "[\"COMBO\", {\"default\": \"1:1 (Square)\", \"options\": [\"1:1 (Square)\", \"2:3 (Portrait Photo)\", \"3:2 (Photo)\", \"3:4 (Portrait Standard)\", \"4:3 (Standard)\", \"9:16 (Portrait Widescreen)\", \"16:9 (Widescreen)\", \"21:9 (Ultrawide)\"], \"tooltip\": \"The aspect ratio for the output dimensions.\", \"multiselect\": false}]",
+      "fieldType": "LIST",
+      "description": "aspect_ratio",
+      "descriptionCn": "aspect_ratio",
+      "descriptionEn": null
+    }
+  }
+]

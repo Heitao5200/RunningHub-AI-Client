@@ -552,7 +552,7 @@ export async function saveFileFromUrl(
         ext = sanitizeExtension(mimeExt) || 'bin';
       }
       if (!ext) ext = 'bin';
-      finalFilename = `decoded_${buildUniqueSuffix()}.${ext}`;
+      finalFilename = `output_${buildUniqueSuffix()}.${ext}`;
     } else {
       const urlPath = new URL(url).pathname;
       finalFilename = urlPath.split('/').pop() || `file_${Date.now()}`;

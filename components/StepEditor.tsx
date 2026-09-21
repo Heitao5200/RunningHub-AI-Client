@@ -1,11 +1,10 @@
 import React, { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { NodeInfo, WebAppInfo, DecodeConfig, InstanceType, PendingFilesMap, RunningHubModelPricePreview, StandardModelConfig } from '../types';
+import { NodeInfo, WebAppInfo, InstanceType, PendingFilesMap, RunningHubModelPricePreview, StandardModelConfig } from '../types';
 import { getSwitchFieldConfig, parseListOptions } from '../utils/nodeUtils';
 import { Upload, Type, List, FileImage, Play, Mic, PlayCircle, AlertCircle, Loader2, Sliders, X, UploadCloud, FileAudio, FileVideo, ChevronDown, Image as ImageIcon, Layers, Settings, Info, Lock, Zap, Maximize2 } from 'lucide-react';
 import { buildStandardModelPayload, fetchStandardModelPricePreview, uploadFile, buildFileUrl } from '../services/api';
 import BatchSettingsModal from './BatchSettingsModal';
 import AppInfoModal from './AppInfoModal';
-
 
 interface StepEditorProps {
     nodes: NodeInfo[];
@@ -14,9 +13,8 @@ interface StepEditorProps {
     runType: 'none' | 'single' | 'batch';
     webAppInfo?: WebAppInfo | null;
     onBack: () => void;
-    onRun: (updatedNodes: NodeInfo[], batchList?: NodeInfo[][], pendingFiles?: PendingFilesMap, decodeConfig?: DecodeConfig, batchTaskName?: string, instanceType?: InstanceType) => void;
+    onRun: (updatedNodes: NodeInfo[], batchList?: NodeInfo[][], pendingFiles?: PendingFilesMap, batchTaskName?: string, instanceType?: InstanceType) => void;
     onCancel: () => void;
-    decodeConfig?: DecodeConfig;
     failedBatchIndices?: Set<number>;  // 失败任务的索引集合
     onRetryTask?: (taskNodes: NodeInfo[], originalIndex: number, pendingFiles: PendingFilesMap) => void;  // 单个任务重试回调，传递当前编辑的节点数据
     instanceType?: InstanceType;  // 新增
@@ -86,15 +84,13 @@ const hasSameNodeStructure = (left: NodeInfo[], right: NodeInfo[]) => {
     });
 };
 
-const StepEditor = forwardRef<StepEditorRef, StepEditorProps>(({ nodes, apiKeys, isConnected, runType, webAppInfo, onBack, onRun, onCancel, decodeConfig, failedBatchIndices = new Set(), onRetryTask, instanceType = 'default', onInstanceTypeChange, initialBatchList = EMPTY_BATCH_LIST, initialBatchTaskName = '', initialPendingFiles = EMPTY_PENDING_FILES, mode = 'app', standardModelConfig }, ref) => {
+const StepEditor = forwardRef<StepEditorRef, StepEditorProps>(({ nodes, apiKeys, isConnected, runType, webAppInfo, onBack, onRun, onCancel, failedBatchIndices = new Set(), onRetryTask, instanceType = 'default', onInstanceTypeChange, initialBatchList = EMPTY_BATCH_LIST, initialBatchTaskName = '', initialPendingFiles = EMPTY_PENDING_FILES, mode = 'app', standardModelConfig }, ref) => {
     const editorDomId = useId().replace(/:/g, '-');
     const [localNodes, setLocalNodes] = useState<NodeInfo[]>(nodes);
     const [uploadingState, setUploadingState] = useState<Record<string, boolean>>({});
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [modelPricePreview, setModelPricePreview] = useState<RunningHubModelPricePreview | null>(null);
     const [isLoadingPricePreview, setIsLoadingPricePreview] = useState(false);
-
-
 
     // Batch settings state
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
@@ -104,8 +100,6 @@ const StepEditor = forwardRef<StepEditorRef, StepEditorProps>(({ nodes, apiKeys,
 
     // App info modal state
     const [isAppInfoModalOpen, setIsAppInfoModalOpen] = useState(false);
-
-    // Decode settings modal state
 
     const [previews, setPreviews] = useState<Record<string, string>>({});
     const [mediaPreview, setMediaPreview] = useState<{ src: string; title: string; type: 'image' | 'video' | 'audio' } | null>(null);
@@ -868,17 +862,17 @@ const StepEditor = forwardRef<StepEditorRef, StepEditorProps>(({ nodes, apiKeys,
 
     const handleBatchRun = () => {
         if (mode === 'standard') {
-            onRun(localNodes, undefined, undefined, decodeConfig, undefined, instanceType);
+            onRun(localNodes, undefined, undefined, undefined, instanceType);
             return;
         }
 
         if (batchList.length === 0) {
             // Fallback to normal run if no batch list
-            onRun(localNodes, undefined, undefined, decodeConfig, undefined, instanceType);
+            onRun(localNodes, undefined, undefined, undefined, instanceType);
             return;
         }
 
-        onRun(localNodes, batchList, pendingFiles, decodeConfig, batchTaskName, instanceType);
+        onRun(localNodes, batchList, pendingFiles, batchTaskName, instanceType);
     };
 
     return (
@@ -992,8 +986,6 @@ const StepEditor = forwardRef<StepEditorRef, StepEditorProps>(({ nodes, apiKeys,
                 </div>
             )}
 
-
-
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
                 {!isConnected ? (
@@ -1061,7 +1053,7 @@ const StepEditor = forwardRef<StepEditorRef, StepEditorProps>(({ nodes, apiKeys,
                     </button>
                 ) : (
                     <button
-                        onClick={() => onRun(localNodes, undefined, undefined, decodeConfig, undefined, instanceType)}
+                        onClick={() => onRun(localNodes, undefined, undefined, undefined, instanceType)}
                         disabled={!isConnected || hasUploadingFiles || runType === 'batch'}
                         className="flex-1 flex justify-center items-center gap-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white font-semibold py-3 px-5 rounded-lg shadow-md shadow-brand-200 dark:shadow-brand-900/20 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:transform-none disabled:shadow-none text-sm"
                     >

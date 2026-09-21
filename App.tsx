@@ -2,12 +2,10 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Home, Briefcase, Settings, User, Layers, Languages } from 'lucide-react';
 import type { StepRunningRef } from './components/StepRunning';
 import SettingsModal from './components/SettingsModal';
-import DecodeSettingsModal from './components/DecodeSettingsModal';
 import Footer from './components/Footer';
 import TermsModal from './components/TermsModal';
-import { NodeInfo, TaskOutput, WebAppInfo, ApiKeyEntry, AutoSaveConfig, Favorite, DecodeConfig, HistoryItem, RecentApp, FailedTaskInfo, InstanceType, HomeDefaultTab, StandardModelConfig } from './types';
+import { NodeInfo, TaskOutput, WebAppInfo, ApiKeyEntry, AutoSaveConfig, Favorite, HistoryItem, RecentApp, FailedTaskInfo, InstanceType, HomeDefaultTab, StandardModelConfig } from './types';
 import { saveMultipleFiles, getDirectoryName, initAutoSave, checkDirectoryAccess, getCurrentDirectoryPath } from './services/autoSaveService';
-import { DEFAULT_DECODE_CONFIG, normalizeDecodeConfig } from './utils/decodeConfig';
 import { useLanguage } from './services/i18n';
 
 const HomeView = lazy(() => import('./components/HomeView'));
@@ -18,12 +16,10 @@ const WorkspacePanel = lazy(() => import('./components/WorkspacePanel'));
 const MultiTaskView = lazy(() => import('./components/MultiTaskView'));
 const ToolsView = lazy(() => import('./components/ToolsView'));
 
-
 const STORAGE_KEY_API_KEYS = 'rh_api_keys_v2';
 const STORAGE_KEY_ENTERPRISE_API = 'rh_enterprise_api_v1';
 const STORAGE_KEY_AUTOSAVE = 'rh_autosave_config';
 const STORAGE_KEY_FAVORITES = 'rh_favorites';
-const STORAGE_KEY_DECODE = 'rh_decode_config';
 const STORAGE_KEY_RECENT = 'rh_recent_apps';
 const STORAGE_KEY_STARTUP_VIEW = 'rh_startup_view';
 const STORAGE_KEY_HOME_DEFAULT_TAB = 'rh_home_default_tab';
@@ -144,13 +140,6 @@ function App() {
     outputType: null,
   });
 
-  const [activeDecodeConfig, setActiveDecodeConfig] = useState<DecodeConfig>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_DECODE);
-      return saved ? normalizeDecodeConfig(JSON.parse(saved)) : DEFAULT_DECODE_CONFIG;
-    } catch { return DEFAULT_DECODE_CONFIG; }
-  });
-
   useEffect(() => {
     const normalizedKeys = normalizeApiKeys(apiKeys);
     const needsNormalization = apiKeys.length !== normalizedKeys.length
@@ -219,7 +208,6 @@ function App() {
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
-  const [isDecodeSettingsOpen, setIsDecodeSettingsOpen] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [termsMode, setTermsMode] = useState<'first-time' | 'about'>('first-time');
 
@@ -276,8 +264,6 @@ function App() {
   const apiKeysList = apiKeys.map(k => k.apiKey).filter(key => key && key.trim());
   const enterpriseApiKeyList = enterpriseApi.apiKey.trim() ? [enterpriseApi.apiKey.trim()] : [];
 
-
-
   const addToRecent = (id: string, name: string) => {
     setRecentApps(prev => {
       const newApp: RecentApp = {
@@ -306,11 +292,8 @@ function App() {
 
   // ...
 
-  const handleRun = (updatedNodes: NodeInfo[], batchList?: NodeInfo[][], pendingFiles?: any, decodeConfig?: DecodeConfig, taskName?: string, instanceTypeParam?: InstanceType) => {
+  const handleRun = (updatedNodes: NodeInfo[], batchList?: NodeInfo[][], pendingFiles?: any, taskName?: string, instanceTypeParam?: InstanceType) => {
     setNodes(updatedNodes);
-    if (decodeConfig) {
-      setActiveDecodeConfig(decodeConfig);
-    }
     if (instanceTypeParam) {
       setInstanceType(instanceTypeParam);
     }
@@ -491,7 +474,7 @@ function App() {
       <header className="bg-white dark:bg-[#0F1115] border-b border-slate-200 dark:border-slate-800/50 h-14 flex items-center justify-between pr-4 shrink-0 z-20 shadow-sm">
         <div className="flex items-center h-full gap-3">
           <img src="/r.png" alt="RunningHub" className="h-10 w-auto ml-2" />
-          <span className="text-xl font-bold text-slate-800 dark:text-white tracking-wide">{text('RH客户端( H 版 ) v1.6.5', 'RH Client (H Edition) v1.6.5')}</span>
+          <span className="text-xl font-bold text-slate-800 dark:text-white tracking-wide">{text('RH客户端( H 版 ) v1.6.6', 'RH Client (H Edition) v1.6.6')}</span>
           <button
             onClick={handleOpenAbout}
             className="ml-2 px-2 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-full transition-colors"
@@ -565,8 +548,6 @@ function App() {
           <div className={`flex-1 overflow-hidden ${currentView === 'tools' ? 'flex' : 'hidden'}`}>
             {currentView === 'tools' && (
               <ToolsView
-                onOpenDecodeSettings={() => setIsDecodeSettingsOpen(true)}
-                decodeConfig={activeDecodeConfig}
                 autoSaveConfig={autoSaveConfig}
                 onUpdateAutoSave={handleUpdateAutoSave}
                 startupView={startupView}
@@ -580,7 +561,6 @@ function App() {
           <div className={`flex-1 overflow-hidden ${currentView === 'multitask' ? 'flex' : 'hidden'}`}>
             <MultiTaskView 
               apiKeys={apiKeys}
-              decodeConfig={activeDecodeConfig}
               autoSaveConfig={autoSaveConfig}
               recentApps={recentApps}
               favorites={favorites}
@@ -614,7 +594,6 @@ function App() {
                     onBack={() => { }}
                     onRun={handleRun}
                     onCancel={handleCancelRun}
-                    decodeConfig={activeDecodeConfig}
                     mode="standard"
                     standardModelConfig={standardModelConfig}
                     failedBatchIndices={failedBatchIndices}
@@ -646,7 +625,6 @@ function App() {
                       nodes={nodes}
                       batchList={activeBatchList}
                       pendingFiles={activePendingFiles}
-                      decodeConfig={activeDecodeConfig}
                       autoSaveEnabled={autoSaveConfig.enabled}
                       batchTaskName={batchTaskName}
                       instanceType={instanceType}
@@ -659,7 +637,6 @@ function App() {
                     <WorkspacePanel
                       history={history}
                       favorites={favorites}
-                      decodeConfig={activeDecodeConfig}
                       apiKeys={apiKeysList}
                       onClearHistory={() => setHistory([])}
                       onUpdateFavorites={handleUpdateFavorites}
@@ -684,17 +661,6 @@ function App() {
         onUpdateEnterpriseApi={handleUpdateEnterpriseApi}
         autoSaveConfig={autoSaveConfig}
         onUpdateAutoSave={handleUpdateAutoSave}
-      />
-
-      <DecodeSettingsModal
-        isOpen={isDecodeSettingsOpen}
-        onClose={() => setIsDecodeSettingsOpen(false)}
-        config={activeDecodeConfig}
-        onSave={(config) => {
-          const normalizedConfig = normalizeDecodeConfig(config);
-          setActiveDecodeConfig(normalizedConfig);
-          localStorage.setItem(STORAGE_KEY_DECODE, JSON.stringify(normalizedConfig));
-        }}
       />
 
       {/* Batch Result Modal */}

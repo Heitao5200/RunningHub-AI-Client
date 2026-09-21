@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { History, Star } from 'lucide-react';
-import { HistoryItem, DecodeConfig, Favorite } from '../types';
+import { HistoryItem, Favorite } from '../types';
 import StepResult from './StepResult';
 import FavoritesPanel from './FavoritesPanel';
 
 interface WorkspacePanelProps {
     history: HistoryItem[];
     favorites: Favorite[];
-    decodeConfig: DecodeConfig;
     apiKeys: string[];
     onClearHistory: () => void;
     onUpdateFavorites: (favorites: Favorite[]) => void;
@@ -17,7 +16,6 @@ interface WorkspacePanelProps {
 const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
     history,
     favorites,
-    decodeConfig,
     apiKeys,
     onClearHistory,
     onUpdateFavorites,
@@ -58,7 +56,6 @@ const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
                 {activeTab === 'history' ? (
                     <StepResult
                         history={history}
-                        decodeConfig={decodeConfig}
                         onClear={onClearHistory}
                     />
                 ) : (

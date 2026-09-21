@@ -14,6 +14,7 @@ import {
   UploadData,
   WebAppInfo,
   RunningHubRegion,
+  WorkflowRunOptions,
 } from '../types';
 import {
   getPreferredRunningHubRegion,
@@ -29,6 +30,8 @@ export const DEFAULT_STANDARD_MODEL_REGISTRY_URL = 'https://raw.githubuserconten
 const RH_ERROR_MESSAGES: Record<string, string> = {
   '401': 'API Key 校验失败，请检查 Key 是否正确。',
   '403': '当前接口没有访问权限，请检查账号或实例配置。',
+  '421': '当前 API 并发已满，请等待空闲槽位后重试。',
+  '429': '请求过快，已触发限流，请稍后重试。',
   '435': 'Plus 实例未找到，请稍后重试或切回标准模式。',
   '803': '节点参数与应用定义不匹配，请重新加载应用参数后再试。',
   '804': '任务正在运行中，请稍候查询结果。',
@@ -101,6 +104,9 @@ const normalizeNodeInfo = (node: any): NodeInfo => {
   let fieldType: NodeInfo['fieldType'];
 
   switch (rawFieldType) {
+    case 'COMBO':
+      fieldType = 'LIST';
+      break;
     case 'IMAGE':
     case 'AUDIO':
     case 'VIDEO':
@@ -236,7 +242,7 @@ export const getRunningHubErrorMessage = (code?: string | number | null, fallbac
 
 export const isCapacityLimitedError = (error: unknown): boolean => {
   const code = String((error as { code?: string | number } | null)?.code ?? '').trim();
-  if (code === '421' || code === '1003' || code === '1520') {
+  if (code === '421' || code === '429' || code === '1003' || code === '1520') {
     return true;
   }
 
@@ -249,7 +255,9 @@ export const isCapacityLimitedError = (error: unknown): boolean => {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+    const error = new Error(`HTTP Error: ${response.status} ${response.statusText}`) as Error & { code: string };
+    error.code = String(response.status);
+    throw error;
   }
   return response.json() as Promise<T>;
 }
@@ -336,12 +344,15 @@ export const uploadMediaV2 = async (apiKey: string, file: File): Promise<UploadD
 
   const json = await handleResponse<any>(response);
 
-  if (json.code !== 0) {
+  if (![0, 200].includes(Number(json.code))) {
     throw createRunningHubError(json.code, json.message || json.msg || 'Upload failed');
   }
 
+  const fileName = json.data?.fileName || json.data?.filename;
+  if (!fileName) throw new Error('上传成功响应中缺少文件名');
+
   return {
-    fileName: json.data?.fileName || '',
+    fileName,
     fileType: json.data?.type || file.type || undefined,
     downloadUrl: json.data?.download_url || undefined,
     size: json.data?.size || undefined,
@@ -390,7 +401,11 @@ export const submitTask = async (
   webappId: string,
   nodeInfoList: NodeInfo[],
   instanceType?: InstanceType,
+  options: WorkflowRunOptions = {},
 ): Promise<SubmitTaskData> => {
+  if (options.retainSeconds != null && (!Number.isInteger(options.retainSeconds) || options.retainSeconds < 10 || options.retainSeconds > 180)) {
+    throw new Error('实例保留时长必须为 10–180 秒的整数');
+  }
   const parsedInput = parseRunningHubAppInput(webappId);
   const region = await resolveRunningHubRegion(apiKey, parsedInput.region);
   const url = `${getRunningHubHost(region)}/task/openapi/ai-app/run`;
@@ -399,6 +414,8 @@ export const submitTask = async (
     apiKey,
     nodeInfoList,
     ...(instanceType && { instanceType }),
+    ...(options.accessPassword && { accessPassword: options.accessPassword }),
+    ...(options.retainSeconds != null && { retainSeconds: options.retainSeconds }),
   };
 
   const response = await fetch(url, {
@@ -415,6 +432,8 @@ export const submitTask = async (
   if (json.code !== 0) {
     throw createRunningHubError(json.code, json.msg || 'Submission failed');
   }
+
+  if (!json.data?.taskId) throw new Error('提交后未返回 taskId');
 
   return {
     taskId: String(json.data?.taskId || ''),
@@ -627,6 +646,7 @@ export const getApiQueueStatus = async (apiKey: string, resolvedRegion?: Running
   const response = await fetch(`${getRunningHubHost(region)}/openapi/v2/queue/status`, {
     method: 'GET',
     headers: buildAuthHeaders(apiKey),
+    signal: AbortSignal.timeout(10000),
   });
 
   const json = await handleResponse<ApiResponse<ApiQueueStatus>>(response);
@@ -637,10 +657,10 @@ export const getApiQueueStatus = async (apiKey: string, resolvedRegion?: Running
 
   return {
     apiKeyType: json.data.apiKeyType || '',
-    concurrentLimit: Math.max(1, Number(json.data.concurrentLimit) || 1),
+    concurrentLimit: Math.max(1, Math.floor(Number(json.data.concurrentLimit) || 1)),
     runningCount: String(json.data.runningCount ?? '0'),
     queuedCount: String(json.data.queuedCount ?? '0'),
-    totalCurrentTasks: String(json.data.totalCurrentTasks ?? '0'),
+    totalCurrentTasks: String(json.data.totalCurrentTasks ?? ((Number(json.data.runningCount) || 0) + (Number(json.data.queuedCount) || 0))),
   };
 };
 

@@ -56,6 +56,12 @@ if command -v rustup >/dev/null 2>&1; then
   done
 fi
 
+if ! node scripts/prepare-tauri-cache.mjs aarch64-apple-darwin x86_64-apple-darwin; then
+  echo "Tauri cache preparation failed."
+  read -r -p "Press Enter to close..."
+  exit 1
+fi
+
 echo "Cleaning previous macOS bundle artifacts..."
 rm -rf "$MACOS_BUNDLE_DIR" "$DMG_BUNDLE_DIR"
 echo

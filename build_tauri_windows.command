@@ -61,6 +61,12 @@ if ! command -v cargo-xwin >/dev/null 2>&1; then
   echo
 fi
 
+if ! node scripts/prepare-tauri-cache.mjs x86_64-pc-windows-msvc; then
+  echo "Tauri cache preparation failed."
+  read -r -p "Press Enter to close..."
+  exit 1
+fi
+
 npm run build:windows:x64 -- --no-sign
 BUILD_EXIT_CODE=$?
 

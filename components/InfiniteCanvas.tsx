@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import AppNode, { AppNodeData } from './canvas/AppNode';
-import { ApiKeyEntry, DecodeConfig, AutoSaveConfig } from '../types';
+import { ApiKeyEntry, AutoSaveConfig } from '../types';
 
 export interface CanvasNode {
   id: string;
@@ -13,7 +13,6 @@ interface InfiniteCanvasProps {
   nodes: CanvasNode[];
   selectedNodeId: string | null;
   apiKeys: ApiKeyEntry[];
-  decodeConfig: DecodeConfig;
   autoSaveConfig: AutoSaveConfig;
   onNodesChange: (nodes: CanvasNode[]) => void;
   onSelectNode: (id: string | null) => void;
@@ -23,7 +22,6 @@ const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   nodes,
   selectedNodeId,
   apiKeys,
-  decodeConfig,
   autoSaveConfig,
   onNodesChange,
   onSelectNode,
@@ -190,7 +188,6 @@ const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
               data={node.data}
               isSelected={selectedNodeId === node.id}
               apiKeys={apiKeys}
-              decodeConfig={decodeConfig}
               autoSaveConfig={autoSaveConfig}
               onUpdate={handleNodeUpdate}
               onDelete={handleNodeDelete}

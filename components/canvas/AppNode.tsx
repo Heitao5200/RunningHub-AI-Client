@@ -9,7 +9,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react';
-import { ApiKeyEntry, AutoSaveConfig, DecodeConfig, InstanceType, NodeInfo, TaskOutput, WebAppInfo } from '../../types';
+import { ApiKeyEntry, AutoSaveConfig, InstanceType, NodeInfo, TaskOutput, WebAppInfo } from '../../types';
 import { fetchWorkflowTemplate, queryTaskResult, submitTask, uploadFile } from '../../services/api';
 import { connectTaskProgress } from '../../services/taskProgress';
 import { getSwitchFieldConfig, parseListOptions } from '../../utils/nodeUtils';
@@ -37,7 +37,6 @@ interface AppNodeProps {
   data: AppNodeData;
   isSelected: boolean;
   apiKeys: ApiKeyEntry[];
-  decodeConfig: DecodeConfig;
   autoSaveConfig: AutoSaveConfig;
   onUpdate: (id: string, data: Partial<AppNodeData>) => void;
   onDelete: (id: string) => void;

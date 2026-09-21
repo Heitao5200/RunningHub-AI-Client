@@ -92,6 +92,7 @@ const probeApiKeyRegion = async (apiKey: string, region: RunningHubRegion): Prom
   try {
     const response = await fetch(`${getRunningHubHost(region)}/openapi/v2/queue/status`, {
       method: 'GET',
+      signal: AbortSignal.timeout(10000),
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${apiKey}`,

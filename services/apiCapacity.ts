@@ -1,5 +1,5 @@
 import { ApiKeyConfig } from '../types';
-import { getAccountInfo } from './api';
+import { getAccountInfo, getApiQueueStatus } from './api';
 
 const PROBE_TTL_MS = 2500;
 
@@ -29,7 +29,7 @@ export const parseCurrentTaskCounts = (value: unknown): number => {
 
 export class ApiCapacityManager {
   readonly apiKey: string;
-  readonly configuredSlots: number;
+  configuredSlots: number;
   readonly index: number;
 
   private localInFlight = 0;
@@ -38,10 +38,11 @@ export class ApiCapacityManager {
   private currentTaskCountsRaw: string | null = null;
   private lastProbeAt = 0;
   private probePromise: Promise<ApiCapacitySnapshot> | null = null;
+  private retryAfter = 0;
 
   constructor(config: ApiKeyConfig, index: number) {
     this.apiKey = config.apiKey.trim();
-    this.configuredSlots = Math.max(1, config.concurrency || 1);
+    this.configuredSlots = normalizeConcurrency(config.concurrency);
     this.index = index;
   }
 
@@ -52,7 +53,7 @@ export class ApiCapacityManager {
       localInFlight: this.localInFlight,
       externalInFlight: this.externalInFlight,
       remoteInFlight: this.remoteInFlight,
-      availableSlots: Math.max(0, this.configuredSlots - this.localInFlight - this.externalInFlight),
+      availableSlots: Date.now() < this.retryAfter ? 0 : Math.max(0, this.configuredSlots - this.localInFlight - this.externalInFlight),
       currentTaskCountsRaw: this.currentTaskCountsRaw,
     };
   }
@@ -69,11 +70,21 @@ export class ApiCapacityManager {
 
     this.probePromise = (async () => {
       try {
-        const accountInfo = await getAccountInfo(this.apiKey);
-        const remoteInFlight = parseCurrentTaskCounts(accountInfo.currentTaskCounts);
+        let taskCounts: unknown;
+        try {
+          const queue = await getApiQueueStatus(this.apiKey);
+          this.configuredSlots = normalizeConcurrency(queue.concurrentLimit);
+          taskCounts = queue.totalCurrentTasks;
+        } catch (error: any) {
+          // The queue endpoint is still labelled "in development" in the docs.
+          // Fall back only when unavailable; authentication errors must stay visible.
+          if (!/HTTP Error: (404|405|5\d\d)/.test(String(error?.message))) throw error;
+          taskCounts = (await getAccountInfo(this.apiKey)).currentTaskCounts;
+        }
+        const remoteInFlight = parseCurrentTaskCounts(taskCounts);
 
         this.remoteInFlight = remoteInFlight;
-        this.currentTaskCountsRaw = accountInfo.currentTaskCounts ?? null;
+        this.currentTaskCountsRaw = taskCounts == null ? null : String(taskCounts);
         this.externalInFlight = Math.max(0, remoteInFlight - this.localInFlight);
         this.lastProbeAt = Date.now();
 
@@ -97,6 +108,12 @@ export class ApiCapacityManager {
 
   releaseSlot(): void {
     this.localInFlight = Math.max(0, this.localInFlight - 1);
+    this.markProbeStale();
+  }
+
+  markCapacityLimited(): void {
+    this.retryAfter = Date.now() + 3000;
+    this.markProbeStale();
   }
 
   markProbeStale(): void {
@@ -104,7 +121,19 @@ export class ApiCapacityManager {
   }
 }
 
+const normalizeConcurrency = (value: number): number =>
+  Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
+
+export const normalizeApiConfigs = (apiConfigs: ApiKeyConfig[]): ApiKeyConfig[] => {
+  const configs = new Map<string, ApiKeyConfig>();
+  apiConfigs.forEach(config => {
+    const apiKey = config.apiKey.trim();
+    if (apiKey && !configs.has(apiKey)) {
+      configs.set(apiKey, { apiKey, concurrency: normalizeConcurrency(config.concurrency) });
+    }
+  });
+  return [...configs.values()];
+};
+
 export const createApiCapacityManagers = (apiConfigs: ApiKeyConfig[]): ApiCapacityManager[] =>
-  apiConfigs
-    .filter(config => config.apiKey.trim())
-    .map((config, index) => new ApiCapacityManager(config, index));
+  normalizeApiConfigs(apiConfigs).map((config, index) => new ApiCapacityManager(config, index));

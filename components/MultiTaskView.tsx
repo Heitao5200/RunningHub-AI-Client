@@ -1,16 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Layers, Loader2, Play, Plus, Save, Square, Trash2, X } from 'lucide-react';
 import { getNodeList, isCapacityLimitedError } from '../services/api';
-import { createApiCapacityManagers } from '../services/apiCapacity';
+import { createApiCapacityManagers, normalizeApiConfigs } from '../services/apiCapacity';
 import { executeWorkflowTask, TaskCancelledError, TaskUsageStats } from '../services/taskExecutor';
 import MultiTaskCard, { MultiTaskCardData, MultiTaskCardRunState } from './multitask/MultiTaskCard';
 import { StepEditorRef, StepEditorSnapshot } from './StepEditor';
-import { ApiKeyEntry, AutoSaveConfig, DecodeConfig, Favorite, InstanceType, NodeInfo, PendingFilesMap, RecentApp, WebAppInfo } from '../types';
+import { ApiKeyEntry, AutoSaveConfig, Favorite, InstanceType, NodeInfo, PendingFilesMap, RecentApp, WebAppInfo, WorkflowRunOptions } from '../types';
 import { parseRunningHubAppInput } from '../services/runningHubRegion';
 
 interface MultiTaskViewProps {
   apiKeys: ApiKeyEntry[];
-  decodeConfig: DecodeConfig;
   autoSaveConfig: AutoSaveConfig;
   recentApps: RecentApp[];
   favorites: Favorite[];
@@ -25,6 +24,7 @@ interface RunUnit {
   pendingFiles: PendingFilesMap;
   batchTaskName: string;
   instanceType: InstanceType;
+  runOptions?: WorkflowRunOptions;
 }
 
 interface SessionState {
@@ -33,6 +33,9 @@ interface SessionState {
   cancelled: boolean;
   cancelledCards: Set<string>;
   connections: Map<string, Set<() => void>>;
+  pendingUnits: RunUnit[];
+  remainingUnits: Map<string, number>;
+  wake?: () => void;
 }
 
 interface MultiTaskDraftCard {
@@ -41,6 +44,7 @@ interface MultiTaskDraftCard {
   nodes: NodeInfo[];
   isConnected: boolean;
   instanceType: InstanceType;
+  runOptions?: WorkflowRunOptions;
   initialBatchList: NodeInfo[][];
   initialBatchTaskName: string;
 }
@@ -88,6 +92,7 @@ const normalizeDraftCard = (card?: Partial<MultiTaskDraftCard> | null): MultiTas
   nodes: Array.isArray(card?.nodes) ? cloneNodes(card!.nodes as NodeInfo[]) : [],
   isConnected: !!card?.isConnected,
   instanceType: card?.instanceType || 'default',
+  runOptions: { retainSeconds: card?.runOptions?.retainSeconds },
   initialBatchList: Array.isArray(card?.initialBatchList) ? cloneNodeRows(card!.initialBatchList as NodeInfo[][]) : [],
   initialBatchTaskName: card?.initialBatchTaskName || '',
 });
@@ -115,6 +120,7 @@ const createCard = (partial?: Partial<MultiTaskCardData>): MultiTaskCardData => 
   loading: partial?.loading || false,
   loadError: partial?.loadError || null,
   instanceType: partial?.instanceType || 'default',
+  runOptions: { ...partial?.runOptions },
   initialBatchList: partial?.initialBatchList ? cloneNodeRows(partial.initialBatchList) : [],
   initialBatchTaskName: partial?.initialBatchTaskName || '',
   run: partial?.run ? {
@@ -137,7 +143,6 @@ const mergeUsage = (left: TaskUsageStats, right?: TaskUsageStats) => ({
 
 const MultiTaskView: React.FC<MultiTaskViewProps> = ({
   apiKeys,
-  decodeConfig,
   autoSaveConfig,
   recentApps,
   favorites,
@@ -170,6 +175,14 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
   const manualSnapshotsRef = useRef<Record<string, StepEditorSnapshot | undefined>>({});
   const sessionRef = useRef<SessionState | null>(null);
 
+  useEffect(() => () => {
+    const session = sessionRef.current;
+    if (!session) return;
+    session.cancelled = true;
+    session.wake?.();
+    session.connections.forEach(closers => closers.forEach(close => close()));
+  }, []);
+
   useEffect(() => {
     localStorage.setItem(MULTITASK_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
   }, [drafts]);
@@ -188,25 +201,15 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
 
   const apiConfigs = useMemo(
     () =>
-      apiKeys
-        .filter(entry => entry.apiKey.trim())
-        .map(entry => ({
-          apiKey: entry.apiKey.trim(),
-          concurrency: Math.max(1, entry.concurrency || 1),
-        })),
+      normalizeApiConfigs(apiKeys.map(entry => ({
+        apiKey: entry.apiKey,
+        concurrency: entry.concurrency || 1,
+      }))),
     [apiKeys],
   );
 
   const totalConfiguredSlots = useMemo(
     () => apiConfigs.reduce((sum, config) => sum + config.concurrency, 0),
-    [apiConfigs],
-  );
-
-  const apiSlots = useMemo(
-    () =>
-      apiConfigs.flatMap(config =>
-        Array.from({ length: config.concurrency }, () => config.apiKey),
-      ),
     [apiConfigs],
   );
 
@@ -250,6 +253,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
       nodes: cloneNodes(snapshot.nodes),
       isConnected: card.isConnected,
       instanceType: snapshot.instanceType,
+      runOptions: { retainSeconds: card.runOptions?.retainSeconds },
       initialBatchList: cloneNodeRows(snapshot.batchList),
       initialBatchTaskName: snapshot.batchTaskName,
     };
@@ -326,6 +330,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
       nodes: item.nodes,
       isConnected: item.isConnected,
       instanceType: item.instanceType,
+      runOptions: { ...item.runOptions },
       initialBatchList: item.initialBatchList,
       initialBatchTaskName: item.initialBatchTaskName,
     }));
@@ -383,6 +388,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
   };
 
   const handleRemoveCard = (cardId: string) => {
+    if (sessionRef.current?.runningCardIds.has(cardId)) return;
     if (cards.length === 1) {
       setCards([createCard()]);
       return;
@@ -404,6 +410,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
       nodes: snapshot?.nodes || sourceCard.nodes,
       isConnected: sourceCard.isConnected,
       instanceType: snapshot?.instanceType || sourceCard.instanceType,
+      runOptions: { ...sourceCard.runOptions },
       initialBatchList: snapshot?.batchList || sourceCard.initialBatchList,
       initialBatchTaskName: snapshot?.batchTaskName || sourceCard.initialBatchTaskName,
     });
@@ -418,6 +425,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
   };
 
   const handleLoadCard = async (cardId: string, forcedId?: string) => {
+    if (sessionRef.current?.runningCardIds.has(cardId)) return;
     const targetCard = cards.find(card => card.id === cardId);
     const rawWebappId = (forcedId ?? targetCard?.webappId ?? '').trim();
     const normalizedWebappId = parseRunningHubAppInput(rawWebappId).appId;
@@ -462,6 +470,16 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
     }
   };
 
+  const finishUnit = (session: SessionState, cardId: string) => {
+    const remaining = Math.max(0, (session.remainingUnits.get(cardId) || 1) - 1);
+    session.remainingUnits.set(cardId, remaining);
+    if (remaining === 0) {
+      session.runningCardIds.delete(cardId);
+      session.connections.delete(cardId);
+      setCards(prev => [...prev]);
+    }
+  };
+
   const isCardCancelled = (session: SessionState, cardId: string) => session.cancelled || session.cancelledCards.has(cardId);
 
   const registerCardConnection = (session: SessionState, cardId: string, connection: { close: () => void } | null) => {
@@ -487,6 +505,14 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
     if (!session) return;
 
     session.cancelledCards.add(cardId);
+    // Remove unsent units even when every API slot is occupied elsewhere.
+    for (let i = session.pendingUnits.length - 1; i >= 0; i -= 1) {
+      if (session.pendingUnits[i].cardId === cardId) {
+        session.pendingUnits.splice(i, 1);
+        finishUnit(session, cardId);
+      }
+    }
+    session.wake?.();
     session.connections.get(cardId)?.forEach(close => close());
 
     updateCard(cardId, card => ({
@@ -505,6 +531,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
     if (!session) return;
 
     session.cancelled = true;
+    session.wake?.();
     session.connections.forEach(closers => closers.forEach(close => close()));
     setSessionNotice('已停止当前调度的追踪，服务端已提交的任务可能仍在运行。');
 
@@ -540,6 +567,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
       pendingFiles: { ...snapshot.pendingFiles },
       batchTaskName: snapshot.batchTaskName,
       instanceType: snapshot.instanceType,
+      runOptions: { ...card.runOptions },
     }));
   };
 
@@ -548,7 +576,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
     const runnable: { card: MultiTaskCardData; snapshot: StepEditorSnapshot }[] = [];
 
     cards.forEach(card => {
-      if (!targetIds.has(card.id)) return;
+      if (!targetIds.has(card.id) || sessionRef.current?.runningCardIds.has(card.id) || card.loading) return;
 
       const snapshot = manualSnapshotsRef.current[card.id] || editorRefs.current[card.id]?.getSnapshot();
       if (!snapshot) return;
@@ -565,8 +593,8 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
   };
 
   const startScheduler = async (targetCardIds?: string[]) => {
-    if (sessionRef.current) {
-      setSessionNotice('已有调度正在运行，请等待当前调度结束后再启动新的任务。');
+    if (sessionRef.current?.cancelled) {
+      setSessionNotice('正在停止当前调度，请稍后再提交。');
       return;
     }
 
@@ -591,14 +619,23 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
       delete manualSnapshotsRef.current[card.id];
     });
 
-    const session: SessionState = {
+    const existingSession = sessionRef.current;
+    const session: SessionState = existingSession || {
       id: crypto.randomUUID(),
-      runningCardIds: new Set(runnableCards.map(item => item.card.id)),
+      runningCardIds: new Set(),
       cancelled: false,
       cancelledCards: new Set(),
       connections: new Map(),
+      pendingUnits: [],
+      remainingUnits: new Map(),
     };
 
+    units.forEach(unit => {
+      session.runningCardIds.add(unit.cardId);
+      session.cancelledCards.delete(unit.cardId);
+      session.remainingUnits.set(unit.cardId, (session.remainingUnits.get(unit.cardId) || 0) + 1);
+    });
+    session.pendingUnits.push(...units);
     sessionRef.current = session;
     setSessionActive(true);
     setSessionNotice(null);
@@ -628,14 +665,19 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
             status: 'queued',
             totalUnits: config.totalUnits,
             progressText: config.totalUnits > 1 ? '等待批量调度' : '等待调度',
-            logs: [timestampLog(`已加入调度队列，并发槽位 ${apiSlots.length}`)],
+            logs: [timestampLog(`已加入调度队列，并发槽位 ${totalConfiguredSlots}`)],
           },
         };
       }),
     );
 
+    if (existingSession) {
+      session.wake?.();
+      return;
+    }
+
     const capacityManagers = createApiCapacityManagers(apiConfigs);
-    const pendingUnits = [...units];
+    const pendingUnits = session.pendingUnits;
     const runningTasks = new Set<Promise<void>>();
     let hasLoggedCapacityWait = false;
 
@@ -648,8 +690,13 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
             break;
           }
 
-          const snapshot = await manager.probe(launchedCount === 0);
-          let availableSlots = snapshot.availableSlots;
+          let availableSlots: number;
+          try {
+            availableSlots = (await manager.probe()).availableSlots;
+          } catch (error: any) {
+            setSessionNotice(`API${manager.index + 1} 队列查询失败，其他账号继续调度：${error.message || error}`);
+            continue;
+          }
 
           while (!session.cancelled && availableSlots > 0 && pendingUnits.length > 0) {
             const unit = pendingUnits.shift();
@@ -658,6 +705,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
             }
 
             if (isCardCancelled(session, unit.cardId)) {
+              finishUnit(session, unit.cardId);
               continue;
             }
 
@@ -682,6 +730,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
 
             appendCardLog(unit.cardId, `调度到 API${manager.index + 1}，当前可用槽位 ${availableSlots}`);
 
+            let retry = false;
             let taskPromise: Promise<void>;
             taskPromise = (async () => {
               try {
@@ -692,13 +741,14 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
                   pendingFiles: unit.pendingFiles,
                   taskIndex: unit.unitIndex,
                   instanceType: unit.instanceType,
-                  decodeConfig,
+                  runOptions: unit.runOptions,
                   autoSaveEnabled: autoSaveConfig.enabled,
                   batchTaskName: unit.batchTaskName,
                   taskLabel: unit.totalUnits > 1 ? `任务 ${unit.unitIndex + 1}/${unit.totalUnits}` : `卡片 ${unit.cardId.slice(0, 6)}`,
                   callbacks: {
                     onLog: message => appendCardLog(unit.cardId, message),
                     onProgress: snapshot => {
+                      if (isCardCancelled(session, unit.cardId)) return;
                       updateCard(unit.cardId, card => ({
                         ...card,
                         run: {
@@ -712,6 +762,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
                       }));
                     },
                     onStatusChange: status => {
+                      if (isCardCancelled(session, unit.cardId)) return;
                       updateCard(unit.cardId, card => ({
                         ...card,
                         run: {
@@ -734,6 +785,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
                   },
                 });
 
+                if (isCardCancelled(session, unit.cardId)) throw new TaskCancelledError();
                 updateCard(unit.cardId, card => {
                   const completedUnits = card.run.completedUnits + 1;
                   const activeUnits = Math.max(0, card.run.activeUnits - 1);
@@ -759,7 +811,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
                   };
                 });
               } catch (error: any) {
-                if (error instanceof TaskCancelledError) {
+                if (error instanceof TaskCancelledError || isCardCancelled(session, unit.cardId)) {
                   updateCard(unit.cardId, card => ({
                     ...card,
                     run: {
@@ -773,8 +825,9 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
                 }
 
                 if (isCapacityLimitedError(error)) {
-                  pendingUnits.unshift(unit);
-                  manager.markProbeStale();
+                  retry = true;
+                  pendingUnits.push(unit);
+                  manager.markCapacityLimited();
                   updateCard(unit.cardId, card => ({
                     ...card,
                     run: {
@@ -813,9 +866,11 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
                 appendCardLog(unit.cardId, `失败: ${error.message || error}`);
               } finally {
                 manager.releaseSlot();
+                if (!retry) finishUnit(session, unit.cardId);
               }
             })().finally(() => {
               runningTasks.delete(taskPromise);
+              session.wake?.();
             });
 
             runningTasks.add(taskPromise);
@@ -830,20 +885,23 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
           continue;
         }
 
-        if (runningTasks.size > 0) {
-          await Promise.race(runningTasks);
-          continue;
+        if (pendingUnits.length > 0 && runningTasks.size === 0 && !hasLoggedCapacityWait) {
+          setSessionNotice('当前 API 并发已被网页或其他任务占用，系统会在有空位时自动继续。');
+          hasLoggedCapacityWait = true;
         }
 
-        if (pendingUnits.length > 0) {
-          if (!hasLoggedCapacityWait) {
-            setSessionNotice('当前 API 并发已被网页或其他任务占用，系统会在有空位时自动继续。');
-            hasLoggedCapacityWait = true;
-          }
+        if (pendingUnits.length === 0 && runningTasks.size === 0) break;
 
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          capacityManagers.forEach(manager => manager.markProbeStale());
-        }
+        // Wake on appended cards, task completion or remote capacity becoming free.
+        await new Promise<void>(resolve => {
+          const wake = () => {
+            clearTimeout(timer);
+            if (session.wake === wake) session.wake = undefined;
+            resolve();
+          };
+          const timer = setTimeout(wake, 3000);
+          session.wake = wake;
+        });
       }
     } finally {
       await Promise.all(runningTasks);
@@ -852,161 +910,6 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
       setSessionActive(false);
     }
 
-    return;
-
-    let nextUnitIndex = 0;
-    const getNextUnit = () => {
-      if (nextUnitIndex >= units.length) return null;
-      const current = units[nextUnitIndex];
-      nextUnitIndex += 1;
-      return current;
-    };
-
-    const worker = async (apiKey: string, workerIndex: number) => {
-      while (true) {
-        if (session.cancelled) return;
-
-        const unit = getNextUnit();
-        if (!unit) return;
-
-        if (isCardCancelled(session, unit.cardId)) {
-          continue;
-        }
-
-        updateCard(unit.cardId, card => ({
-          ...card,
-          run: {
-            ...card.run,
-            status: 'running',
-            activeUnits: card.run.activeUnits + 1,
-            progressText: unit.totalUnits > 1 ? `批量任务 ${unit.unitIndex + 1}/${unit.totalUnits} 执行中` : '任务执行中',
-          },
-        }));
-
-        appendCardLog(unit.cardId, `调度到并发槽位 ${workerIndex + 1}`);
-
-        try {
-          const result = await executeWorkflowTask({
-            apiKey,
-            webappId: unit.webappId,
-            taskNodes: unit.nodes,
-            pendingFiles: unit.pendingFiles,
-            taskIndex: unit.unitIndex,
-            instanceType: unit.instanceType,
-            decodeConfig,
-            autoSaveEnabled: autoSaveConfig.enabled,
-            batchTaskName: unit.batchTaskName,
-            taskLabel: unit.totalUnits > 1 ? `任务 ${unit.unitIndex + 1}/${unit.totalUnits}` : `卡片 ${unit.cardId.slice(0, 6)}`,
-            callbacks: {
-              onLog: message => appendCardLog(unit.cardId, message),
-              onProgress: snapshot => {
-                updateCard(unit.cardId, card => ({
-                  ...card,
-                  run: {
-                    ...card.run,
-                    status: 'running',
-                    progressPercent: Math.round(snapshot.overallPercent),
-                    progressText: snapshot.currentNodeName
-                      ? `当前节点: ${snapshot.currentNodeName}`
-                      : card.run.progressText,
-                  },
-                }));
-              },
-              onStatusChange: status => {
-                updateCard(unit.cardId, card => ({
-                  ...card,
-                  run: {
-                    ...card.run,
-                    status: status === 'RUNNING' ? 'running' : 'queued',
-                    progressText:
-                      status === 'SUBMITTING'
-                        ? '正在提交任务'
-                        : status === 'RUNNING'
-                          ? '任务运行中'
-                          : '任务排队中',
-                  },
-                }));
-              },
-            },
-            control: {
-              isCancelled: () => isCardCancelled(session, unit.cardId),
-              registerConnection: connection => registerCardConnection(session, unit.cardId, connection),
-              pollOffsetMs: workerIndex * 250,
-            },
-          });
-
-          updateCard(unit.cardId, card => {
-            const completedUnits = card.run.completedUnits + 1;
-            const activeUnits = Math.max(0, card.run.activeUnits - 1);
-            const totalProcessed = completedUnits + card.run.failedUnits;
-            const isFinished = totalProcessed >= card.run.totalUnits;
-
-            return {
-              ...card,
-              run: {
-                ...card.run,
-                status: isFinished ? (card.run.failedUnits > 0 ? 'failed' : 'success') : 'running',
-                completedUnits,
-                activeUnits,
-                currentTaskId: result.taskId,
-                taskIds: [...card.run.taskIds, result.taskId],
-                outputs: [...card.run.outputs, ...result.outputs],
-                usage: mergeUsage(card.run.usage, result.usage),
-                progressPercent: isFinished ? 100 : card.run.progressPercent,
-                progressText: isFinished
-                  ? (card.run.failedUnits > 0 ? '部分任务失败' : '全部任务完成')
-                  : `已完成 ${completedUnits}/${card.run.totalUnits}`,
-              },
-            };
-          });
-        } catch (error: any) {
-          if (error instanceof TaskCancelledError) {
-            updateCard(unit.cardId, card => ({
-              ...card,
-              run: {
-                ...card.run,
-                status: 'cancelled',
-                activeUnits: Math.max(0, card.run.activeUnits - 1),
-                progressText: '已停止追踪，服务端已提交的任务可能仍在运行',
-              },
-            }));
-            continue;
-          }
-
-          updateCard(unit.cardId, card => {
-            const failedUnits = card.run.failedUnits + 1;
-            const activeUnits = Math.max(0, card.run.activeUnits - 1);
-            const totalProcessed = failedUnits + card.run.completedUnits;
-            const isFinished = totalProcessed >= card.run.totalUnits;
-            const failedBatchIndices = new Set(card.run.failedBatchIndices);
-            failedBatchIndices.add(unit.unitIndex);
-
-            return {
-              ...card,
-              run: {
-                ...card.run,
-                status: isFinished ? 'failed' : 'running',
-                failedUnits,
-                activeUnits,
-                error: error.message || '任务执行失败',
-                failedBatchIndices,
-                progressText: isFinished ? '任务执行结束，存在失败项' : `存在失败项，已完成 ${totalProcessed}/${card.run.totalUnits}`,
-              },
-            };
-          });
-
-          appendCardLog(unit.cardId, `失败: ${error.message || error}`);
-        }
-      }
-    };
-
-    try {
-      await Promise.all(apiSlots.map((apiKey, index) => worker(apiKey, index)));
-    } finally {
-      session.connections.forEach(closers => closers.forEach(close => close()));
-      sessionRef.current = null;
-      setSessionActive(false);
-    }
   };
 
   const handleRunCard = async (
@@ -1014,12 +917,11 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
     updatedNodes: NodeInfo[],
     batchList?: NodeInfo[][],
     pendingFiles?: PendingFilesMap,
-    _nextDecodeConfig?: DecodeConfig,
     batchTaskName?: string,
     instanceType?: InstanceType,
   ) => {
-    if (sessionRef.current) {
-      setSessionNotice('当前已有调度在运行，请等待结束后再启动新的卡片任务。');
+    if (sessionRef.current?.cancelled || sessionRef.current?.runningCardIds.has(cardId)) {
+      setSessionNotice('当前卡片仍在执行或停止中，请稍后再提交。');
       return;
     }
 
@@ -1053,8 +955,6 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
     await startScheduler();
   };
 
-  const pageLockedCardIds = sessionRef.current?.runningCardIds || new Set<string>();
-
   return (
     <div className="flex h-full w-full flex-col bg-slate-50 dark:bg-[#0F1115]">
       <div className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-[#161920]">
@@ -1065,7 +965,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
               <h2 className="text-lg font-bold text-slate-800 dark:text-white">多任务模式</h2>
             </div>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              每张卡片都是一个完整任务工作区，统一按 API 并发能力调度执行。当前并发槽位 {apiSlots.length}
+              每张卡片都是一个完整任务工作区，统一按 API 并发能力调度执行。当前并发槽位 {totalConfiguredSlots}
             </p>
           </div>
 
@@ -1230,11 +1130,14 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
                 key={card.id}
                 card={card}
                 apiKeys={validApiKeys}
-                decodeConfig={decodeConfig}
                 editorRef={ref => {
                   editorRefs.current[card.id] = ref;
                 }}
-                isLocked={sessionActive && !pageLockedCardIds.has(card.id)}
+                isBusy={!!sessionRef.current?.runningCardIds.has(card.id)}
+                onRunOptionsChange={(cardId, runOptions) => {
+                  if (sessionRef.current?.runningCardIds.has(cardId)) return;
+                  updateCard(cardId, current => ({ ...current, runOptions }));
+                }}
                 onWebappIdChange={handleWebappIdChange}
                 onLoad={handleLoadCard}
                 onRemove={handleRemoveCard}
@@ -1356,7 +1259,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
         <div className="border-t border-slate-200 bg-white px-6 py-3 dark:border-slate-800 dark:bg-[#161920]">
           <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
             <Loader2 className="h-4 w-4 animate-spin text-brand-500" />
-            调度进行中，按并发槽位 {apiSlots.length} 自动分配卡片任务与轮询。
+            调度进行中，按并发槽位 {totalConfiguredSlots} 自动分配卡片任务与轮询。
           </div>
         </div>
       )}

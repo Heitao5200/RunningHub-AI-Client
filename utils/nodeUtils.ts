@@ -129,7 +129,7 @@ const toListOption = (item: any): ListOption | null => {
     if ('name' in item) {
         const name = extractText(item.name);
         const description = extractText(item.description);
-        const index = extractText(item.index) || name;
+        const index = extractText(item.index) || extractText(item.value) || name;
         if (!name || !index) {
             return null;
         }
@@ -238,67 +238,44 @@ const inferBooleanValue = (value: string, checkedValue: string, uncheckedValue: 
 };
 
 export const parseListOptions = (node: NodeInfo): ListOption[] => {
-    const isListType = node.fieldType === 'LIST';
+    // Upload widgets can also carry COMBO metadata (e.g. H3 audio_upload).
+    if (['IMAGE', 'AUDIO', 'VIDEO'].includes(node.fieldType)) return [];
+
+    const parsed = parseFieldData(node.fieldData);
+    const isDescriptor = Array.isArray(parsed)
+        && typeof parsed[0] === 'string'
+        && parsed[1] != null
+        && typeof parsed[1] === 'object'
+        && !Array.isArray(parsed[1]);
+    const descriptorType = isDescriptor ? parsed[0].toUpperCase() : '';
+    const isComboDescriptor = descriptorType === 'COMBO';
+    const isNestedOptions = Array.isArray(parsed) && Array.isArray(parsed[0]);
+    const isOptionsObject = parsed != null && !Array.isArray(parsed)
+        && typeof parsed === 'object' && Array.isArray(parsed.options);
+    const isListType = node.fieldType === 'LIST' || String(node.fieldType) === 'COMBO';
     const isSwitchWithData = isSwitchField(node) && !!node.fieldData;
     const isSelectField = node.fieldName === 'select' && !!node.fieldData;
 
-    if (!isListType && !isSwitchWithData && !isSelectField) {
-        return [];
-    }
+    // ComfyUI v3 uses ["BOOLEAN", {...}] and ["FLOAT", {...}] as type
+    // declarations. The type marker and metadata are never dropdown values.
+    if (isDescriptor && ['BOOLEAN', 'STRING', 'INT', 'FLOAT'].includes(descriptorType)) return [];
+    if (!isListType && !isSwitchWithData && !isSelectField && !isComboDescriptor && !isNestedOptions && !isOptionsObject) return [];
 
     const fallback = node.fieldValue ? [{ name: node.fieldValue, index: node.fieldValue }] : [];
+    let values: unknown = parsed;
+    if (isComboDescriptor) values = parsed[1].options;
+    else if (isNestedOptions) values = parsed[0];
+    else if (isOptionsObject) values = parsed.options;
+    else if (typeof parsed === 'string' && parsed.includes(',')) values = parsed.split(',');
 
-    if (!node.fieldData) {
-        return fallback;
-    }
-
-    try {
-        const parsed = parseFieldData(node.fieldData);
-
-        if (typeof parsed === 'string') {
-            if (parsed.includes(',')) {
-                const options = parsed
-                    .split(',')
-                    .map(part => part.trim())
-                    .filter(Boolean)
-                    .map(part => ({ name: part, index: part }));
-
-                return options.length > 0 ? options : fallback;
-            }
-
-            return fallback;
-        }
-
-        if (Array.isArray(parsed)) {
-            if (parsed.length > 0 && Array.isArray(parsed[0])) {
-                const options = parsed[0]
-                    .map(item => String(item).trim())
-                    .filter(Boolean)
-                    .map(item => ({ name: item, index: item }));
-
-                return options.length > 0 ? options : fallback;
-            }
-
-            if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
-                const options = parsed
-                    .map(toListOption)
-                    .filter((item): item is ListOption => item !== null);
-
-                return options.length > 0 ? options : fallback;
-            }
-
-            const options = parsed
-                .map(item => String(item).trim())
-                .filter(Boolean)
-                .map(item => ({ name: item, index: item }));
-
-            return options.length > 0 ? options : fallback;
-        }
-    } catch (error) {
-        console.error('Error parsing list options:', error);
-    }
-
-    return fallback;
+    if (!Array.isArray(values)) return fallback;
+    const seen = new Set<string>();
+    const options = values.map(toListOption).filter((item): item is ListOption => {
+        if (!item || seen.has(item.index)) return false;
+        seen.add(item.index);
+        return true;
+    });
+    return options.length > 0 ? options : fallback;
 };
 
 export const getSwitchFieldConfig = (node: NodeInfo): SwitchFieldConfig | null => {

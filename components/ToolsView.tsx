@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { LayoutTemplate, Lock, Settings, SlidersHorizontal, Volume2 } from 'lucide-react';
-import { AutoSaveConfig, DecodeConfig, HomeDefaultTab } from '../types';
+import { AutoSaveConfig, HomeDefaultTab } from '../types';
 import BatchReminderModal from './BatchReminderModal';
 import GeneralSettingsModal from './GeneralSettingsModal';
-import { isDecodeFeatureEnabled } from '../utils/decodeConfig';
 
 type StartupView = 'home' | 'workspace' | 'multitask';
 
 interface ToolsViewProps {
-  onOpenDecodeSettings: () => void;
-  decodeConfig: DecodeConfig;
+
   autoSaveConfig: AutoSaveConfig;
   onUpdateAutoSave: (config: AutoSaveConfig) => void;
   startupView: StartupView;
@@ -30,8 +28,7 @@ const HOME_TAB_LABELS: Record<HomeDefaultTab, string> = {
 };
 
 const ToolsView: React.FC<ToolsViewProps> = ({
-  onOpenDecodeSettings,
-  decodeConfig,
+
   autoSaveConfig,
   onUpdateAutoSave,
   startupView,
@@ -42,8 +39,6 @@ const ToolsView: React.FC<ToolsViewProps> = ({
   const [showBatchReminderModal, setShowBatchReminderModal] = useState(false);
   const [showGeneralSettingsModal, setShowGeneralSettingsModal] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(false);
-  const decodeEnabled = isDecodeFeatureEnabled(decodeConfig);
-  const decodeBadgeText = decodeConfig.alwaysOn ? '全局检测中' : '已启用';
 
   useEffect(() => {
     const enabled = localStorage.getItem('rh_batch_reminder_enabled') === 'true';
@@ -91,31 +86,6 @@ const ToolsView: React.FC<ToolsViewProps> = ({
                 首页默认标签: {HOME_TAB_LABELS[homeDefaultTab]}
               </div>
             </div>
-          </div>
-        </div>
-
-        <div
-          onClick={onOpenDecodeSettings}
-          className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:border-brand-300 hover:shadow-lg dark:border-slate-800 dark:bg-[#1a1d24] dark:hover:border-brand-700"
-        >
-          <div className="relative flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/20 dark:to-slate-800">
-            <div className="absolute inset-0 bg-grid-pattern opacity-10"></div>
-            <span className="select-none text-6xl drop-shadow-sm transition-transform group-hover:scale-110">🐤</span>
-            {decodeEnabled && (
-              <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-600 dark:text-green-400">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"></span>
-                {decodeBadgeText}
-              </div>
-            )}
-          </div>
-
-          <div className="p-4">
-            <h3 className="mb-1 text-sm font-bold text-slate-800 transition-colors group-hover:text-amber-600 dark:text-slate-200 dark:group-hover:text-amber-500">
-              小黄鸭解码
-            </h3>
-            <p className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-              自动识别并检测小黄鸭加密图，没有则跳过，有则直接解码，全局生效。
-            </p>
           </div>
         </div>
 

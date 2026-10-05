@@ -1,5 +1,7 @@
-import type { MultiTaskCardData, MultiTaskCardRunState } from './MultiTaskCard';
+import type { MultiTaskCardData, MultiTaskCardRunState } from './cardTypes';
 import type { InstanceType, NodeInfo, PendingFilesMap, WebAppInfo, WorkflowRunOptions } from '../../types';
+import { normalizeOrganization } from '../../services/cardLibrary/model';
+import type { CardOrganization } from '../../services/cardLibrary/model';
 import type { TaskUsageStats } from '../../services/taskExecutor';
 export interface RunUnit {
   runId: string;
@@ -26,6 +28,7 @@ export interface SessionState {
 }
 
 export interface MultiTaskDraftCard {
+  organization?: CardOrganization;
   webappId: string;
   webAppInfo: WebAppInfo | null;
   nodes: NodeInfo[];
@@ -70,10 +73,11 @@ export const createEmptyRunState = (): MultiTaskCardRunState => ({
   },
 });
 
-export const cloneNodes = (nodes: NodeInfo[]) => nodes.map(node => ({ ...node }));
+export const cloneNodes = (nodes: NodeInfo[]) => structuredClone(nodes);
 export const cloneNodeRows = (rows?: NodeInfo[][]) => (rows || []).map(row => cloneNodes(row));
 
 export const normalizeDraftCard = (card?: Partial<MultiTaskDraftCard> | null): MultiTaskDraftCard => ({
+  organization: normalizeOrganization(card?.organization),
   webappId: card?.webappId || '',
   webAppInfo: card?.webAppInfo || null,
   nodes: Array.isArray(card?.nodes) ? cloneNodes(card!.nodes as NodeInfo[]) : [],
@@ -100,6 +104,8 @@ export const normalizeDraft = (draft?: Partial<MultiTaskDraft> | null): MultiTas
 
 export const createCard = (partial?: Partial<MultiTaskCardData>): MultiTaskCardData => ({
   id: partial?.id || crypto.randomUUID(),
+  organization: normalizeOrganization(partial?.organization),
+  savedCardId: partial?.savedCardId,
   webappId: partial?.webappId || '',
   webAppInfo: partial?.webAppInfo || null,
   nodes: partial?.nodes ? cloneNodes(partial.nodes) : [],

@@ -8,8 +8,8 @@ export const STORAGE_KEY_RECENT = 'rh_recent_apps';
 export const STORAGE_KEY_STARTUP_VIEW = 'rh_startup_view';
 export const STORAGE_KEY_HOME_DEFAULT_TAB = 'rh_home_default_tab';
 
-export type AppView = 'home' | 'workspace' | 'multitask' | 'tools';
-export type StartupView = Exclude<AppView, 'tools'>;
+export type AppView = 'home' | 'workspace' | 'multitask' | 'cards' | 'tools';
+export type StartupView = Exclude<AppView, 'tools' | 'cards'>;
 
 export const normalizeAutoSaveConfig = (config?: Partial<AutoSaveConfig> | null): AutoSaveConfig => ({
   enabled: !!config?.enabled && !!(config?.directoryName || config?.directoryPath),

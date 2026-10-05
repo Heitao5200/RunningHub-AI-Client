@@ -83,6 +83,7 @@ function App() {
   const tabs: { id: AppView; label: string; icon: React.FC<any> }[] = [
     { id: 'home', label: text('首页', 'Home'), icon: Home },
     { id: 'workspace', label: text('标准模型 API', 'Model API'), icon: Briefcase },
+    { id: 'cards', label: text('卡片管理', 'Card Manager'), icon: Layers },
     { id: 'multitask', label: text('多任务模式', 'Multi-task'), icon: Layers },
     { id: 'tools', label: text('设置', 'Settings'), icon: Settings },
   ];
@@ -90,10 +91,10 @@ function App() {
   return (
     <div className="h-screen flex flex-col text-slate-800 dark:text-slate-100 font-sans selection:bg-brand-100 selection:text-brand-700 dark:selection:bg-brand-900 dark:selection:text-brand-200 transition-colors duration-300 overflow-hidden bg-slate-100 dark:bg-[#0F1115]">
       {/* Header */}
-      <header className="bg-white dark:bg-[#0F1115] border-b border-slate-200 dark:border-slate-800/50 h-14 flex items-center justify-between pr-4 shrink-0 z-20 shadow-sm">
-        <div className="flex items-center h-full gap-3">
+      <header className="bg-white dark:bg-[#0F1115] border-b border-slate-200 dark:border-slate-800/50 min-h-14 flex flex-col items-stretch justify-between gap-2 py-2 pr-2 md:h-14 md:flex-row md:items-center md:gap-0 md:py-0 md:pr-4 shrink-0 z-20 shadow-sm">
+        <div className="flex min-w-0 shrink-0 items-center h-10 md:h-full gap-2">
           <img src="/r.png" alt="RunningHub" className="h-10 w-auto ml-2" />
-          <span className="text-xl font-bold text-slate-800 dark:text-white tracking-wide">{text('RH客户端( H 版 ) v1.6.6', 'RH Client (H Edition) v1.6.6')}</span>
+          <span className="truncate text-sm md:hidden xl:inline xl:text-xl font-bold text-slate-800 dark:text-white tracking-wide">{text('RH客户端( H 版 ) v1.6.6', 'RH Client (H Edition) v1.6.6')}</span>
           <button
             onClick={handleOpenAbout}
             className="ml-2 px-2 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-full transition-colors"
@@ -102,9 +103,9 @@ function App() {
           </button>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 shrink-0 md:shrink items-center min-h-9 gap-2 overflow-x-auto md:gap-4">
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={toggleLanguage}
@@ -123,7 +124,7 @@ function App() {
                 <button
                   key={tab.id}
                   onClick={() => handleSwitchView(tab.id)}
-                  className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${isActive
+                  className={`relative flex shrink-0 whitespace-nowrap items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${isActive
                     ? 'bg-slate-100 dark:bg-slate-800 text-brand-600 dark:text-brand-400 font-medium'
                     : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-700 dark:hover:text-slate-300'
                     }`}
@@ -140,7 +141,7 @@ function App() {
           {/* Personal Center */}
           <button
             onClick={() => setShowSettings(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-brand-600 dark:hover:text-brand-400 transition-colors text-sm"
+            className="flex shrink-0 whitespace-nowrap items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-brand-600 dark:hover:text-brand-400 transition-colors text-sm"
           >
             <User className="w-4 h-4" />
             <span>{text('个人中心', 'Account')}</span>
@@ -177,11 +178,13 @@ function App() {
             )}
           </div>
 
-          <div className={`flex-1 overflow-hidden ${currentView === 'multitask' ? 'flex' : 'hidden'}`}>
+          <div className={`flex-1 overflow-hidden ${currentView === 'multitask' || currentView === 'cards' ? 'flex' : 'hidden'}`}>
             <MultiTaskView
               cardRequests={cardRequests.requests}
               onCardRequestsHandled={cardRequests.acknowledge}
               active={currentView === 'multitask'}
+              managementActive={currentView === 'cards'}
+              onShowWorkspace={() => handleSwitchView('multitask')}
               apiKeys={apiKeys}
               autoSaveConfig={autoSaveConfig}
               recentApps={recentApps}

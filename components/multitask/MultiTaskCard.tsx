@@ -15,48 +15,12 @@ import MultiTaskCardDownload from './MultiTaskCardDownload';
 import type { DirectoryHandle } from '../../services/fileSystem';
 import MultiTaskOutputs from './MultiTaskOutputs';
 
-export type MultiTaskCardStatus = 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled';
-
-export interface MultiTaskUsageStats {
-  coins: number;
-  thirdParty: number;
-  taskTime: number;
-}
-
-export interface MultiTaskCardRunState {
-  mode: 'single' | 'batch';
-  status: MultiTaskCardStatus;
-  totalUnits: number;
-  completedUnits: number;
-  failedUnits: number;
-  activeUnits: number;
-  progressPercent: number;
-  progressText: string;
-  currentTaskId: string | null;
-  taskIds: string[];
-  logs: string[];
-  outputs: TaskOutput[];
-  error: string | null;
-  failedBatchIndices: Set<number>;
-  usage: MultiTaskUsageStats;
-}
-
-export interface MultiTaskCardData {
-  id: string;
-  webappId: string;
-  webAppInfo: WebAppInfo | null;
-  nodes: NodeInfo[];
-  isConnected: boolean;
-  loading: boolean;
-  loadError: string | null;
-  instanceType: InstanceType;
-  runOptions?: WorkflowRunOptions;
-  initialBatchList?: NodeInfo[][];
-  initialBatchTaskName?: string;
-  run: MultiTaskCardRunState;
-}
+import type { MultiTaskCardData, MultiTaskCardStatus } from './cardTypes';
 
 interface MultiTaskCardProps {
+  onManage?: () => void;
+  onSaveToLibrary?: () => void;
+  groupNames?: string[];
   directory: DirectoryHandle | null;
   onDirectoryChange: (directory: DirectoryHandle) => void;
   onHistory: () => void;
@@ -88,6 +52,7 @@ const statusMap: Record<MultiTaskCardStatus, { label: string; className: string 
 
 const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
   card,
+  onManage, onSaveToLibrary, groupNames = [],
   directory, onDirectoryChange, onHistory,
   apiKeys,
   editorRef,
@@ -120,7 +85,7 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="truncate text-base font-semibold text-slate-800 dark:text-white">
-                {card.webAppInfo?.webappName || card.webappId || '\u65b0\u4efb\u52a1\u5361\u7247'}
+                {card.organization?.title || card.webAppInfo?.webappName || card.webappId || '\u65b0\u4efb\u52a1\u5361\u7247'}
               </h3>
               <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.className}`}>
                 {statusMeta.label}
@@ -147,6 +112,12 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
           </div>
         </div>
 
+        {(onManage || onSaveToLibrary) && <div className="mt-2 flex max-h-24 flex-wrap items-center gap-2 overflow-y-auto text-xs">
+          {onManage && <button onClick={onManage} className="rounded border border-slate-300 px-2 py-1 text-slate-600 dark:border-slate-600 dark:text-slate-300">分组与标签</button>}
+          {onSaveToLibrary && <button onClick={onSaveToLibrary} disabled={!card.webappId.trim() || card.loading} className="rounded border border-brand-400 px-2 py-1 text-brand-600 disabled:opacity-50 dark:text-brand-300">保存到卡片库</button>}
+          {groupNames.map(name => <span key={name} className="rounded bg-slate-100 px-2 py-1 dark:bg-slate-800">{name}</span>)}
+          {(card.organization?.tags || []).map(tag => <span key={tag} className="rounded-full bg-brand-100 px-2 py-1 text-brand-700 dark:bg-brand-900 dark:text-brand-100">{tag}</span>)}
+        </div>}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label={`${card.webAppInfo?.webappName || '任务卡片'}内容`}>
         <div className="border-b border-slate-200 px-4 pb-3 dark:border-slate-800">
@@ -337,7 +308,7 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
         <MultiTaskCardDownload
           directory={directory || null}
           onDirectoryChange={onDirectoryChange}
-          cardName={card.webAppInfo?.webappName || card.webappId || 'batch-results'}
+          cardName={card.organization?.title || card.webAppInfo?.webappName || card.webappId || 'batch-results'}
           isBatch={card.run.mode === 'batch'}
           isRunning={isRunning}
           runStatus={card.run.status}

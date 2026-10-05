@@ -2,7 +2,8 @@
 // Open /tests/fixtures/card-layout.html while Vite is running.
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import MultiTaskCard, { MultiTaskCardData } from '../../components/multitask/MultiTaskCard';
+import MultiTaskCard from '../../components/multitask/MultiTaskCard';
+import type { MultiTaskCardData } from '../../components/multitask/cardTypes';
 import StepEditor from '../../components/StepEditor';
 
 const dimensions = [[1440, 900], [1062, 900], [1024, 600], [390, 844]];

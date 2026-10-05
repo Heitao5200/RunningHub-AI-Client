@@ -1,6 +1,9 @@
 import type { TaskCardRequest } from '../hooks/useTaskCardRequests';
 import { useRequestedCards } from './multitask/useRequestedCards';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import CardManagerView from './cardManager/CardManagerView';
+import CardManagementDialog from './cardManager/CardManagementDialog';
+import { useCardManagement } from './cardManager/useCardManagement';
 import { Layers, Loader2, Play, Plus, Save, Square, Trash2, X } from 'lucide-react';
 import { useRunHistory } from './multitask/history/useRunHistory';
 import RunHistoryPanel from './multitask/history/RunHistoryPanel';
@@ -14,20 +17,38 @@ interface MultiTaskViewProps {
   cardRequests: TaskCardRequest[];
   onCardRequestsHandled: (ids: string[]) => void;
   active: boolean;
+  managementActive?: boolean;
+  onShowWorkspace?: () => void;
   apiKeys: ApiKeyEntry[];
   autoSaveConfig: AutoSaveConfig;
   recentApps: RecentApp[];
   favorites: Favorite[];
 }
 
-const MultiTaskView: React.FC<MultiTaskViewProps> = ({ apiKeys, autoSaveConfig, recentApps, favorites, cardRequests, onCardRequestsHandled, active }) => {
+const MultiTaskView: React.FC<MultiTaskViewProps> = ({ apiKeys, autoSaveConfig, recentApps, favorites, cardRequests, onCardRequestsHandled, active, managementActive = false, onShowWorkspace }) => {
   const history = useRunHistory();
   const workspace = useMultiTaskWorkspace(apiKeys);
   const cardListRef = useRequestedCards(cardRequests, onCardRequestsHandled, workspace, active);
+  const [revealCardId, setRevealCardId] = useState<string | null>(null);
+  const openTask = (id: string) => { setRevealCardId(id); onShowWorkspace?.(); };
+  const management = useCardManagement(workspace, managementActive, openTask);
+  useEffect(() => {
+    if (!active || !revealCardId) return;
+    const frame = requestAnimationFrame(() => {
+      const target = [...(cardListRef.current?.querySelectorAll<HTMLElement>('[data-task-card-id]') || [])]
+        .find(element => element.dataset.taskCardId === revealCardId);
+      if (target) { target.scrollIntoView({ block: 'nearest' }); target.querySelector<HTMLElement>('input, button')?.focus({ preventScroll: true }); setRevealCardId(null); }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [active, revealCardId, workspace.cards, cardListRef]);
   const { stopTrackingCard, stopAllTracking, handleRunCard, handleRunAll } = useMultiTaskScheduler(workspace, history, autoSaveConfig);
   const { cards, showAppPicker, setShowAppPicker, sessionActive, sessionNotice, drafts, isSaveDraftModalOpen, setIsSaveDraftModalOpen, draftNameInput, setDraftNameInput, draftModalError, setDraftModalError, confirmOverwriteDraftId, setConfirmOverwriteDraftId, draftPendingDelete, setDraftPendingDelete, editorRefs, sessionRef, totalConfiguredSlots, validApiKeys, updateCard, openSaveDraftModal, handleSaveDraft, handleLoadDraft, openDeleteDraftModal, handleConfirmDeleteDraft, handleCreateCard, handleCreateCardFromPreset, handleRemoveCard, handleDuplicateCard, handleWebappIdChange, handleLoadCard } = workspace;
-  return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-slate-50 dark:bg-[#0F1115]">
+  return (<>
+    <div className={managementActive ? 'flex h-full min-h-0 w-full' : 'hidden'}>
+      {(managementActive || management.library.ready) && <CardManagerView workspace={workspace} management={management} openTask={openTask} />}
+    </div>
+    <CardManagementDialog management={management} cards={cards} />
+    <div className={`${managementActive ? 'hidden' : 'flex'} h-full min-h-0 w-full flex-col bg-slate-50 dark:bg-[#0F1115]`}>
       <div className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-[#161920]">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -201,6 +222,9 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({ apiKeys, autoSaveConfig, 
               <MultiTaskCard
                 key={card.id}
                 card={card}
+                onManage={() => management.edit('live', card.id)}
+                onSaveToLibrary={() => management.edit('save', card.id)}
+                groupNames={management.library.groups.filter(group => card.organization?.groupIds.includes(group.id)).map(group => group.name)}
                 directory={history.directories[card.id] || null}
                 onDirectoryChange={directory => history.setDirectory(card.id, directory)}
                 onHistory={() => history.setFilterCard(card.id)}
@@ -341,7 +365,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({ apiKeys, autoSaveConfig, 
         </div>
       )}
     </div>
-  );
+  </>);
 };
 
 export default MultiTaskView;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getNodeList } from '../../services/api';
 import { normalizeApiConfigs } from '../../services/apiCapacity';
-import type { MultiTaskCardData } from './MultiTaskCard';
+import type { MultiTaskCardData } from './cardTypes';
 import type { StepEditorRef, StepEditorSnapshot } from '../StepEditor';
 import type { ApiKeyEntry, NodeInfo, WebAppInfo } from '../../types';
 import { parseRunningHubAppInput } from '../../services/runningHubRegion';
@@ -12,10 +12,12 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
   const [showAppPicker, setShowAppPicker] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  const draftReadFailed = useRef(false);
   const [drafts, setDrafts] = useState<MultiTaskDraft[]>(() => {
     try {
       const raw = localStorage.getItem(MULTITASK_DRAFTS_STORAGE_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) throw new Error('Invalid draft storage');
       return Array.isArray(parsed)
         ? parsed
             .map(item => normalizeDraft(item))
@@ -23,6 +25,7 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
             .sort((left, right) => right.updatedAt - left.updatedAt)
         : [];
     } catch {
+      draftReadFailed.current = true;
       return [];
     }
   });
@@ -51,8 +54,14 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
     };
   }, []);
 
+  const persistedDrafts = useRef(drafts);
   useEffect(() => {
-    localStorage.setItem(MULTITASK_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    // Reading/normalizing legacy drafts must not rewrite the migration source.
+    if (draftReadFailed.current || persistedDrafts.current === drafts) return;
+    try {
+      localStorage.setItem(MULTITASK_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+      persistedDrafts.current = drafts;
+    } catch { setSessionNotice('草稿未能保存，请检查存储空间后重试。'); }
   }, [drafts]);
 
   useEffect(() => {
@@ -92,7 +101,7 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
     && card.run.outputs.length === 0;
 
   const buildSnapshotForCard = (card: MultiTaskCardData): StepEditorSnapshot => {
-    const snapshot = manualSnapshotsRef.current[card.id] || editorRefs.current[card.id]?.getSnapshot();
+    const snapshot = editorRefs.current[card.id]?.getSnapshot() || manualSnapshotsRef.current[card.id];
     if (snapshot) {
       return {
         ...snapshot,
@@ -116,6 +125,7 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
   const createDraftCardFromCard = (card: MultiTaskCardData): MultiTaskDraftCard => {
     const snapshot = buildSnapshotForCard(card);
     return {
+      organization: card.organization,
       webappId: card.webappId,
       webAppInfo: card.webAppInfo,
       nodes: cloneNodes(snapshot.nodes),
@@ -156,6 +166,10 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
   };
 
   const handleSaveDraft = () => {
+    if (draftReadFailed.current) {
+      setDraftModalError('原草稿读取失败，已保留原数据。请恢复存储后重新打开页面。');
+      return;
+    }
     const draftSourceCards = cards.filter(card => !isPlaceholderCard(card) || card.webappId.trim() || card.nodes.length > 0);
     const normalizedName = draftNameInput.trim();
     if (!normalizedName) {
@@ -193,6 +207,7 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
     }
 
     const draftCards = draft.cards.map(item => createCard({
+      organization: item.organization,
       webappId: item.webappId,
       webAppInfo: item.webAppInfo,
       nodes: item.nodes,
@@ -277,6 +292,8 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
 
     const snapshot = editorRefs.current[cardId]?.getSnapshot();
     handleCreateCard({
+      organization: sourceCard.organization,
+      savedCardId: sourceCard.savedCardId,
       webappId: sourceCard.webappId,
       webAppInfo: sourceCard.webAppInfo,
       nodes: snapshot?.nodes || sourceCard.nodes,

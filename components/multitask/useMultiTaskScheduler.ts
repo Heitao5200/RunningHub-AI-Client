@@ -1,7 +1,7 @@
 import { isCapacityLimitedError } from '../../services/api';
 import { createApiCapacityManagers } from '../../services/apiCapacity';
 import { executeWorkflowTask, TaskCancelledError } from '../../services/taskExecutor';
-import type { MultiTaskCardData } from './MultiTaskCard';
+import type { MultiTaskCardData } from './cardTypes';
 import type { StepEditorSnapshot } from '../StepEditor';
 import type { AutoSaveConfig, InstanceType, NodeInfo, PendingFilesMap } from '../../types';
 import type { useRunHistory } from './history/useRunHistory';

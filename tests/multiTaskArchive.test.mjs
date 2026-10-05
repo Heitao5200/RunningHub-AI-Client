@@ -103,3 +103,16 @@ test('rejects an archive request when no output could be fetched', async () => {
     /没有可下载的结果/,
   );
 });
+
+test('historical ZIP groups runs and reports retryable failures without path traversal', async () => {
+  const bad = { fileUrl: 'https://files.example.test/failure.txt', archiveDirectory: '../bad' };
+  const result = await createMultiTaskArchive([
+    { fileUrl: 'https://files.example.test/same.txt', archiveDirectory: 'run-one' },
+    { fileUrl: 'https://files.example.test/same.txt', archiveDirectory: 'run-two' }, bad,
+    { fileUrl: 'https://files.example.test/safe.txt', archiveDirectory: '../bad' },
+  ], async url => url.includes('failure') ? new Response('', { status: 403 }) : new Response('bytes'));
+  const files = Object.keys(unzipSync(new Uint8Array(await result.blob.arrayBuffer())));
+  assert.ok(files.includes('run-one/same.txt')); assert.ok(files.includes('run-two/same.txt'));
+  assert.ok(files.every(name => !name.split('/').includes('..')));
+  assert.deepEqual(result.failedOutputs, [bad]);
+});

@@ -3,7 +3,10 @@ import { TaskOutput } from '../types';
 
 const TYPE_ONLY_CATEGORIES = new Set(['image', 'video', 'audio', 'file', 'application', 'text']);
 
+export interface ArchiveOutput extends TaskOutput { archiveDirectory?: string }
+
 export interface MultiTaskArchiveResult {
+  failedOutputs: ArchiveOutput[];
   blob: Blob;
   includedCount: number;
   failedCount: number;
@@ -72,7 +75,7 @@ const withUniqueFilename = (filename: string, existing: Set<string>): string => 
 
 /** Fetches a card's outputs and packages every reachable file into one ZIP archive. */
 export async function createMultiTaskArchive(
-  outputs: TaskOutput[],
+  outputs: ArchiveOutput[],
   fetchOutput: typeof fetch = fetch,
   onProgress?: ArchiveProgressCallback,
 ): Promise<MultiTaskArchiveResult> {
@@ -84,6 +87,7 @@ export async function createMultiTaskArchive(
   const filenames = new Set<string>();
   const filenameKeys = new Set<string>();
   let failedCount = 0;
+  const failedOutputs: ArchiveOutput[] = [];
   let resolveArchive!: () => void;
   let rejectArchive!: (error: Error) => void;
   const archiveWritten = new Promise<void>((resolve, reject) => {
@@ -109,6 +113,7 @@ export async function createMultiTaskArchive(
         const contentType = response.headers.get('content-type') || '';
         const content = new Uint8Array(await response.arrayBuffer());
         let filename = getFilename(url, output, contentType, index);
+        if (output.archiveDirectory) filename = `${sanitizeFilename(output.archiveDirectory, 'run').replace(/^\.+$/, 'run')}/${filename}`;
         filename = withUniqueFilename(filename, filenameKeys);
         filenames.add(filename);
         filenameKeys.add(filename.toLocaleLowerCase('en-US'));
@@ -117,9 +122,11 @@ export async function createMultiTaskArchive(
         entry.push(content, true);
       } catch {
         failedCount += 1;
+        failedOutputs.push(output);
       }
     } else {
       failedCount += 1;
+      failedOutputs.push(output);
     }
 
     onProgress?.(index + 1, outputs.length, failedCount);
@@ -138,6 +145,7 @@ export async function createMultiTaskArchive(
 
   return {
     blob: new Blob(blobParts, { type: 'application/zip' }),
+    failedOutputs,
     includedCount: filenames.size,
     failedCount,
     filenames: [...filenames],

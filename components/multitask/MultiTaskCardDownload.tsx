@@ -2,9 +2,12 @@ import React, { useRef, useState } from 'react';
 import { AlertCircle, Archive, CheckCircle2, Download, FolderOpen, Loader2 } from 'lucide-react';
 import { DirectoryHandle, saveBinaryFile, selectRootDirectory } from '../../services/fileSystem';
 import { createMultiTaskArchive, createMultiTaskArchiveFilename } from '../../services/multiTaskArchive';
+import { authorizeDirectory } from '../../services/runHistory/download';
 import { TaskOutput } from '../../types';
 
 interface MultiTaskCardDownloadProps {
+  directory: DirectoryHandle | null;
+  onDirectoryChange: (directory: DirectoryHandle) => void;
   cardName: string;
   isBatch: boolean;
   isRunning: boolean;
@@ -18,13 +21,14 @@ type DownloadFeedback = {
 };
 
 const MultiTaskCardDownload: React.FC<MultiTaskCardDownloadProps> = ({
+  directory,
+  onDirectoryChange: setDirectory,
   cardName,
   isBatch,
   isRunning,
   runStatus,
   outputs,
 }) => {
-  const [directory, setDirectory] = useState<DirectoryHandle | null>(null);
   const [directoryPending, setDirectoryPending] = useState(false);
   const [feedback, setFeedback] = useState<DownloadFeedback | null>(null);
   const downloadActive = useRef(false);
@@ -61,6 +65,7 @@ const MultiTaskCardDownload: React.FC<MultiTaskCardDownloadProps> = ({
     downloadActive.current = true;
     setFeedback({ kind: 'progress', message: `准备打包 ${outputs.length} 个结果…` });
     try {
+      await authorizeDirectory(directory);
       const archive = await createMultiTaskArchive(outputs, fetch, (completed, total, failed) => {
         setFeedback({
           kind: 'progress',

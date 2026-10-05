@@ -12,6 +12,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { InstanceType, NodeInfo, PendingFilesMap, TaskOutput, WebAppInfo, WorkflowRunOptions } from '../../types';
 import StepEditor, { StepEditorRef } from '../StepEditor';
 import MultiTaskCardDownload from './MultiTaskCardDownload';
+import type { DirectoryHandle } from '../../services/fileSystem';
 import MultiTaskOutputs from './MultiTaskOutputs';
 
 export type MultiTaskCardStatus = 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled';
@@ -56,6 +57,9 @@ export interface MultiTaskCardData {
 }
 
 interface MultiTaskCardProps {
+  directory: DirectoryHandle | null;
+  onDirectoryChange: (directory: DirectoryHandle) => void;
+  onHistory: () => void;
   card: MultiTaskCardData;
   apiKeys: string[];
   editorRef: React.Ref<StepEditorRef>;
@@ -84,6 +88,7 @@ const statusMap: Record<MultiTaskCardStatus, { label: string; className: string 
 
 const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
   card,
+  directory, onDirectoryChange, onHistory,
   apiKeys,
   editorRef,
   isBusy,
@@ -328,7 +333,10 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
         </div>
       </div>
       <div className="shrink-0 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-[#161920]">
+        <button type="button" onClick={onHistory} className="mb-2 text-sm text-brand-500 hover:underline">本卡片历史</button>
         <MultiTaskCardDownload
+          directory={directory || null}
+          onDirectoryChange={onDirectoryChange}
           cardName={card.webAppInfo?.webappName || card.webappId || 'batch-results'}
           isBatch={card.run.mode === 'batch'}
           isRunning={isRunning}

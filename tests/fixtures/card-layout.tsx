@@ -86,7 +86,8 @@ function Cases() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {states.map((status, i) => <MultiTaskCard key={status} card={makeCard(status, i)} apiKeys={[]} editorRef={null}
             isBusy={status === 'running' || status === 'queued'} onRunOptionsChange={noop} onWebappIdChange={noop}
-            onLoad={noop} onRemove={noop} onDuplicate={noop} onRun={noop} onCancel={noop} onInstanceTypeChange={noop} />)}
+            onLoad={noop} onRemove={noop} onDuplicate={noop} onRun={noop} onCancel={noop} onInstanceTypeChange={noop}
+            directory={null} onDirectoryChange={noop} onHistory={noop} />)}
         </div>
       </div>
       <footer className="h-7 shrink-0">模拟页脚</footer>

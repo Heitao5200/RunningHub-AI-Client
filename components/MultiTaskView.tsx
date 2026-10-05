@@ -956,7 +956,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-slate-50 dark:bg-[#0F1115]">
+    <div className="flex h-full min-h-0 w-full flex-col bg-slate-50 dark:bg-[#0F1115]">
       <div className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-[#161920]">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -1114,7 +1114,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({
         )}
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-6 [container-type:size]">
         {cards.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-8 py-12 text-center dark:border-slate-700 dark:bg-[#161920]">

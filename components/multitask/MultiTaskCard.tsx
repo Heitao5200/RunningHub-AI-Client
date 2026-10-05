@@ -114,7 +114,7 @@ const MultiTaskCard: React.FC<MultiTaskCardProps> = ({
 
   // The list establishes a size container; reserve its 24px top/bottom padding.
   return (
-    <div className="relative flex h-[clamp(360px,calc(100cqh_-_48px),900px)] min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#161920]">
+    <div data-task-card-id={card.id} className="relative flex h-[clamp(360px,calc(100cqh_-_48px),900px)] min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#161920]">
       <div className="shrink-0 border-b border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/30">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

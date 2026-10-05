@@ -1,3 +1,5 @@
+import type { TaskCardRequest } from '../hooks/useTaskCardRequests';
+import { useRequestedCards } from './multitask/useRequestedCards';
 import React from 'react';
 import { Layers, Loader2, Play, Plus, Save, Square, Trash2, X } from 'lucide-react';
 import { useRunHistory } from './multitask/history/useRunHistory';
@@ -9,15 +11,19 @@ import { DRAFT_NAME_PLACEHOLDER } from './multitask/workspaceModel';
 import type { ApiKeyEntry, AutoSaveConfig, RecentApp, Favorite } from '../types';
 
 interface MultiTaskViewProps {
+  cardRequests: TaskCardRequest[];
+  onCardRequestsHandled: (ids: string[]) => void;
+  active: boolean;
   apiKeys: ApiKeyEntry[];
   autoSaveConfig: AutoSaveConfig;
   recentApps: RecentApp[];
   favorites: Favorite[];
 }
 
-const MultiTaskView: React.FC<MultiTaskViewProps> = ({ apiKeys, autoSaveConfig, recentApps, favorites }) => {
+const MultiTaskView: React.FC<MultiTaskViewProps> = ({ apiKeys, autoSaveConfig, recentApps, favorites, cardRequests, onCardRequestsHandled, active }) => {
   const history = useRunHistory();
   const workspace = useMultiTaskWorkspace(apiKeys);
+  const cardListRef = useRequestedCards(cardRequests, onCardRequestsHandled, workspace, active);
   const { stopTrackingCard, stopAllTracking, handleRunCard, handleRunAll } = useMultiTaskScheduler(workspace, history, autoSaveConfig);
   const { cards, showAppPicker, setShowAppPicker, sessionActive, sessionNotice, drafts, isSaveDraftModalOpen, setIsSaveDraftModalOpen, draftNameInput, setDraftNameInput, draftModalError, setDraftModalError, confirmOverwriteDraftId, setConfirmOverwriteDraftId, draftPendingDelete, setDraftPendingDelete, editorRefs, sessionRef, totalConfiguredSlots, validApiKeys, updateCard, openSaveDraftModal, handleSaveDraft, handleLoadDraft, openDeleteDraftModal, handleConfirmDeleteDraft, handleCreateCard, handleCreateCardFromPreset, handleRemoveCard, handleDuplicateCard, handleWebappIdChange, handleLoadCard } = workspace;
   return (
@@ -180,7 +186,7 @@ const MultiTaskView: React.FC<MultiTaskViewProps> = ({ apiKeys, autoSaveConfig, 
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-6 [container-type:size]">
+      <div ref={cardListRef} className="min-h-0 flex-1 overflow-auto p-6 [container-type:size]">
         {cards.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-8 py-12 text-center dark:border-slate-700 dark:bg-[#161920]">

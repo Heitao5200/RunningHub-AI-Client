@@ -32,16 +32,23 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
   const [confirmOverwriteDraftId, setConfirmOverwriteDraftId] = useState<string | null>(null);
   const [draftPendingDelete, setDraftPendingDelete] = useState<MultiTaskDraft | null>(null);
 
+  const loadTokens = useRef(new Map<string, symbol>());
+  const mounted = useRef(true);
   const editorRefs = useRef<Record<string, StepEditorRef | null>>({});
   const manualSnapshotsRef = useRef<Record<string, StepEditorSnapshot | undefined>>({});
   const sessionRef = useRef<SessionState | null>(null);
 
-  useEffect(() => () => {
-    const session = sessionRef.current;
-    if (!session) return;
-    session.cancelled = true;
-    session.wake?.();
-    session.connections.forEach(closers => closers.forEach(close => close()));
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      // Preserve tokens across StrictMode's setup/cleanup replay; ignore actual unmount results.
+      mounted.current = false;
+      const session = sessionRef.current;
+      if (!session) return;
+      session.cancelled = true;
+      session.wake?.();
+      session.connections.forEach(closers => closers.forEach(close => close()));
+    };
   }, []);
 
   useEffect(() => {
@@ -201,6 +208,7 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
       return;
     }
 
+    loadTokens.current.clear();
     editorRefs.current = {};
     manualSnapshotsRef.current = {};
     setCards(draftCards);
@@ -230,13 +238,14 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
 
   const handleCreateCard = (partial?: Partial<MultiTaskCardData>) => {
     const nextCard = createCard(partial);
-    setCards(prev => [...prev, nextCard]);
+    setCards(prev => prev.some(card => card.id === nextCard.id) ? prev : [...prev, nextCard]);
     setShowAppPicker(false);
     return nextCard.id;
   };
 
-  const handleCreateCardFromPreset = async (preset: { webappId: string; nodes?: NodeInfo[]; appInfo?: WebAppInfo | null; name?: string }) => {
+  const handleCreateCardFromPreset = (preset: { id?: string; webappId: string; nodes?: NodeInfo[]; appInfo?: WebAppInfo | null; name?: string }) => {
     const cardId = handleCreateCard({
+      id: preset.id,
       webappId: preset.webappId,
       webAppInfo: preset.appInfo || null,
       nodes: preset.nodes || [],
@@ -244,12 +253,14 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
     });
 
     if (!preset.nodes?.length && preset.webappId) {
-      await handleLoadCard(cardId, preset.webappId);
+      void handleLoadCard(cardId, preset.webappId);
     }
+    return cardId;
   };
 
   const handleRemoveCard = (cardId: string) => {
     if (sessionRef.current?.runningCardIds.has(cardId)) return;
+    loadTokens.current.delete(cardId);
     if (cards.length === 1) {
       setCards([createCard()]);
       return;
@@ -278,9 +289,16 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
   };
 
   const handleWebappIdChange = (cardId: string, value: string) => {
+    loadTokens.current.delete(cardId);
     updateCard(cardId, card => ({
       ...card,
       webappId: value,
+      loading: false,
+      isConnected: false,
+      nodes: [],
+      webAppInfo: null,
+      initialBatchList: [],
+      initialBatchTaskName: '',
       loadError: null,
     }));
   };
@@ -291,6 +309,9 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
     const rawWebappId = (forcedId ?? targetCard?.webappId ?? '').trim();
     const normalizedWebappId = parseRunningHubAppInput(rawWebappId).appId;
     const primaryApiKey = validApiKeys[0] || '';
+    const token = Symbol('card-load');
+    loadTokens.current.set(cardId, token);
+    const isCurrent = () => mounted.current && loadTokens.current.get(cardId) === token;
 
     if (!primaryApiKey || !normalizedWebappId) {
       updateCard(cardId, card => ({
@@ -310,7 +331,8 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
 
     try {
       const result = await getNodeList(primaryApiKey, rawWebappId);
-      updateCard(cardId, card => ({
+      if (!isCurrent()) return;
+      updateCard(cardId, card => !isCurrent() ? card : ({
         ...card,
         webappId: normalizedWebappId,
         webAppInfo: result.appInfo,
@@ -323,7 +345,8 @@ export function useMultiTaskWorkspace(apiKeys: ApiKeyEntry[]) {
         run: createEmptyRunState(),
       }));
     } catch (error: any) {
-      updateCard(cardId, card => ({
+      if (!isCurrent()) return;
+      updateCard(cardId, card => !isCurrent() ? card : ({
         ...card,
         loading: false,
         loadError: error.message || '加载应用失败',
